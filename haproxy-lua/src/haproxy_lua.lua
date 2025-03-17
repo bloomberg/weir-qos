@@ -178,29 +178,6 @@ function get_access_key(headers, query_params)
     return access_key
 end
 
-function get_client_ip(headers, txn)
-    local client_ip = ""
-    if headers and headers["x-forwarded-for"] and headers["x-forwarded-for"][0] then
-        client_ip = headers["x-forwarded-for"][0]
-    end
-    if client_ip == "" then
-        client_ip = txn.f:src()
-    end
-    return client_ip
-end
-
-function get_header_field(headers, field)
-    local field_value = ""
-    if headers and headers[field] and headers[field][0] then
-        field_value = headers[field][0]
-    end
-    if string.len(field_value) == 0 then
-        field_value = "N/A"
-    end
-    return field_value
-end
-
-
 function parse_url_query_string_into_params_table(query_string)
     local result = {}
 
@@ -593,22 +570,5 @@ end
 -- entry point to get policies.
 -- we also provide a admin port here
 core.register_service("ingest_policies", "tcp", ingest_policies)
-
-function log_request(reason, txn)
-    local headers = txn.http:req_get_headers()
-    local access_key = get_access_key(headers)
-    local client_ip = get_client_ip(headers, txn)
-    core.Info(reason.." - "..txn.f:src()..":"..txn.f:src_port().."~|~"..client_ip.."~|~"..access_key.."~|~"..txn.f:method())
-end
-
-core.register_action("delay_request", { "http-req" }, function(txn)
-    log_request("Delayed (Throughput Violation)", txn)
-    core.msleep(100)
-end)
-
-core.register_fetches("log_denied_req", function(txn)
-    log_request("Denied (Rate Limit Violation)", txn)
-    return 1
-end)
 
 end
