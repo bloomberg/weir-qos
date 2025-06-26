@@ -234,13 +234,6 @@ core.register_fetches("req_eval", function(txn)
     local op_class = classify_request_class(txn)
     txn:set_var("txn.op_class", op_class)
 
-    if txn.f:path() == "/swift/healthcheck" then
-        -- When the request is to the healthcheck endpoint then we always want to pass it through.
-        -- We also specifically *don't* want to log the request for QoS tracking because that would impact
-        -- other unauthenticated requests (especially if we have a large haproxy cluster with many healthchecks)
-        return 0
-    end
-
     local epoch = os.time()
     local violater = check_violation(epoch, access_key, txn.f:method(), txn)
     if violater ~= 0 then
