@@ -1,0 +1,6 @@
+[flake8]
+# W503 - line break occurred before binary operator. Flake8 will complain no matter what style you pick.
+# W504 - line break occurred after binary operator. Flake8 will complain no matter what style you pick.
+ignore = W503,W504
+max-line-length = 120
+unused_arguments_ignore_stub_functions = True

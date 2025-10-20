@@ -1,0 +1,5 @@
+# Some tools specifically expect there to be a requirements.txt file at the root of the repository, but that's awkward
+# to do for a monorepo like this one, so we'll keep this one here that just refers to the project-specific files.
+-r polygen/requirements.txt
+-r integration-tests/requirements.txt
+

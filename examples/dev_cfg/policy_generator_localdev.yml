@@ -1,0 +1,102 @@
+## The redis server that stores the QoS metrics sent by syslog_servers
+## Both policy_generator and qos_metrics_exposer read from this server.
+## Required
+redis_server: "localhost:9004"
+
+## The file policy_generator uses for logging purposes.
+## Optional. If no file is specified, logs will be written to stdout.
+# log_file_name: /workspace/logs/policy_generator.log
+
+## The minimum level at which log messages are output.
+## Logging calls with lower severity are ignored.
+## Options are: debug, info, warning, error
+## Required
+log_level: info
+
+## The file qos_metrics_exposer uses for logging purposes
+## Optional. If no value is specified, logs will be written to stdout.
+# qos_metrics_log_file_name: /workspace/logs/qos_metrics.log
+
+## The file qos_metrics_publisher uses to log metrics
+## Required
+qos_metrics_file_name: ./metrics.log
+
+## The port qos_metrics_exposer uses to expose QoS metrics in Prometheus format
+## Required
+qos_metrics_endpoint_port: 9005
+
+## The (integer) number of milliseconds between redis polls
+## Required
+sleep_time: 3
+
+## The 'zone' string used to identify distinct subsets of traffic to be limited.
+## Note that this should match the zone field used in 'endpoint' configuration
+## item of syslog_server. syslog_server identifies the metrics sent to redis by
+## 'endpoint' which uses the '<zone>.<datacenter>' notation.
+## Required
+zone: "localdev"
+
+## Sets the parallelism when processing the data read from redis
+## Required
+violation_check_thread_num: 10
+
+## Sets the amount of records to be read from redis per-poll.
+## Required
+redis_keys_batch: 150
+
+## The path to the lua script executed on the redis server to collect aggregated usage statistics
+## Required
+polygen_lua_path: ./polygen_redis_get.lua
+
+## The maximum number of policies (to be sent to the haproxies) that can be
+## pending in the dispatch queue.
+## Required
+policy_msg_queue_size: 4096
+
+## The time offset in ms in between sending requests (un)block messages to HAProxy.
+## Optional. Default: 200
+requests_unblock_backoff_time_ms: 200
+
+## Ratio of active requests to maximum allowed that needs to be reached
+## in order to allow new requests to be established.
+## Optional. Default: 0.95
+requests_unblock_ratio: 0.95
+
+## List of HAProxy servers (installed on HTTP servers) QoS policies will be
+## sent to. HAProxies are listed per-endpoint. The 'endpoint' string used to
+## identify distinct subsets of traffic to be limited and it uses the
+## '<zone>.<datacenter>' notation. Multiple endpoints would be listed when a
+## single redis server is used to serve multiple HTTP clusters.
+## Required
+haproxy_servers:
+  localdev.dockerdc:
+    - "localhost:9002"
+
+## QoS limits per 'endpoint'
+## Two sets of limit need to be provided: rate limits and bandwidth limits.
+## A user can be assigned a custom limit; otherwise, default limits are used.
+## Required
+limits:
+  localdev.dockerdc:
+    # count limit of GET, PUT, POST, DELETE, HEAD
+    - user_PUT:
+        default: 3
+    - user_GET:
+        default: 3
+        123abc456def789ghi: 5  # All limits can also be customised for individual access keys
+    - user_POST:
+        default: 3
+    - user_DELETE:
+        default: 3
+    - user_HEAD:
+        default: 3
+    # following are bandwidth limits in MB
+    - user_bnd_up:
+        default: 1
+    - user_bnd_dwn:
+        default: 1
+
+## The interval (in seconds) to log users for which QoS limits could not be found.
+## If vaue <=0 then no logging is done.
+## Optional. Default: 60
+unknown_users_report_time_seconds: 60

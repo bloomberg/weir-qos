@@ -1,0 +1,26 @@
+checks:
+  - tool:
+      name: black
+  - tool:
+      name: clang-format
+    args:
+      extensions: [.c, .cpp, .h, .hpp]
+  - tool:
+      name: demjson-jsonlint
+  - tool:
+      name: flake8
+    args:
+      pyInterpreter: "python3.12"
+      plugins:
+        - flake8-unused-arguments
+        - pep8-naming
+  - tool:
+      name: isort
+  - tool:
+      name: mypy
+    args:
+      pyVersion: "3.12"
+  - tool:
+      name: shellcheck
+  - tool:
+      name: yamllint

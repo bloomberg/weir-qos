@@ -1,0 +1,19 @@
+{
+    "user_to_qos_id": {
+        "user1key901234567890": "COMMON_QOS",
+        "user2key901234567890": "COMMON_QOS",
+        "common": "COMMON_QOS"
+    },
+    "qos": {
+        "COMMON_QOS": {
+            "user_DELETE": 2,
+            "user_GET": 2,
+            "user_HEAD": 2,
+            "user_POST": 2,
+            "user_PUT": 2,
+            "user_bnd_up": 1,
+            "user_bnd_dwn": 1,
+            "user_conns": 3
+        }
+    }
+}

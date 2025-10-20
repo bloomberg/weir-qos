@@ -1,0 +1,61 @@
+services:
+  filesrv:
+    build:
+      context: .
+      target: python-filesrv
+    network_mode: host  # port 9000
+
+  syslogsrv:
+    build:
+      context: .
+      target: syslogsrv
+    network_mode: host  # port 9003
+    depends_on:
+      - redissrv
+    volumes:
+      - ./examples/dev_cfg:/workspace/config:ro,z
+
+  redissrv:
+    build:
+      context: .
+      target: redis
+    ports:
+      - 9004:9004
+    volumes:
+      - ./examples/dev_cfg:/workspace/config:ro,z
+
+  polygen:
+    build:
+      context: .
+      target: python-polygen
+    network_mode: host
+    depends_on:
+      - redissrv
+    volumes:
+      - ./examples/dev_cfg:/workspace/config:ro,z
+      - type: bind
+        source: ./examples/dev_cfg/polygen_user_limits.json
+        target: /root/weir_localdev_cache_limits.json
+        read_only: true
+      - type: bind
+        source: ./polygen/polygen_redis_get.lua
+        target: /workspace/polygen_redis_get.lua
+        read_only: true
+
+  qos-metrics-exposer:
+    build:
+      context: .
+      target: python-polygen-metrics
+    network_mode: host
+    depends_on:
+      - redissrv
+    volumes:
+      - ./examples/dev_cfg:/workspace/config:ro,z
+
+  haproxy:
+    build:
+      context: .
+      target: haproxy
+    network_mode: host
+    volumes:
+      - ./examples/dev_cfg:/workspace/config:ro,z

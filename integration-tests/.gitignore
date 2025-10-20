@@ -1,0 +1,8 @@
+# Python
+venv/
+__pycache__/
+
+# Test output
+*.png
+*.err.txt
+*.out.txt

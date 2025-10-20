@@ -1,0 +1,4 @@
+PyYAML
+redis
+requests
+prometheus_client
