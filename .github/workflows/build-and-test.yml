@@ -6,6 +6,9 @@ on:  # yamllint disable-line rule:truthy
       - "main"
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
 
@@ -13,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: install deps
         run: |
           sudo apt-get install -y --no-install-recommends \
