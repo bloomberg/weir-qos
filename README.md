@@ -11,7 +11,7 @@
 
 ## Rationale
 
-This project was originally designed to provide user-level Quality of Service (QoS) for [S3 object storage](https://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html) endpoints backed by [Ceph](https://docs.ceph.com/en/quincy/radosgw/index.html).
+This project was originally designed to provide user-level Quality of Service (QoS) for [S3 object storage](https://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html) endpoints backed by [Ceph](https://docs.ceph.com/en/latest/radosgw/).
 
 It's not specific to the S3 API though, this framework can be used to provide user-level QoS for almost any HTTP service.
 The only requirement is that a user can be uniquely identified from the header of each request.
@@ -29,8 +29,8 @@ A detailed overview of the framework and its components is found at
 ## Quick Start
 
 ```sh
-git clone https://github.com/bloomberg/<TBD>
-cd <TBD>
+git clone https://github.com/bloomberg/weir-qos.git
+cd weir-qos
 docker compose up
 ```
 
@@ -90,18 +90,10 @@ appreciated**. For detailed contributing guidelines, please see
 
 ## License
 
-Please read the [LICENSE](LICENSE) file.
+Distributed under the Apache-2.0 License. See [LICENSE](LICENSE) for more information.
 
 ## Code of Conduct
 
 This project has adopted a [Code of Conduct](https://github.com/bloomberg/.github/blob/main/CODE_OF_CONDUCT.md).
 If you have any concerns about the Code, or behavior which you have experienced
 in the project, please contact us at opensource@bloomberg.net.
-
-## Security Vulnerability Reporting
-
-If you believe you have identified a security vulnerability in this project, please send email to the project
-team at opensource@bloomberg.net, detailing the suspected issue and any methods you've found to reproduce it.
-
-Please do NOT open an issue in the GitHub repository, as we'd prefer to keep vulnerability reports private until
-we've had an opportunity to review and address them.
