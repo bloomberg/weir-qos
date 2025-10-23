@@ -4,13 +4,15 @@ ENTRYPOINT ["redis-server", "/workspace/config/redis_localdev.conf"]
 
 
 FROM ubuntu:24.04 AS python-base
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip python3-venv && \
-    apt-get clean && \
+RUN <<EOF
+    apt-get update
+    apt-get install -y --no-install-recommends python3 python3-pip python3-venv
+    apt-get clean
     rm -rf /var/lib/apt/lists/*  # Remove the apt cache lists to keep image size down
-RUN python3 -m venv /workspace/venv
-ENV PATH=/workspace/venv/bin:$PATH
+    python3 -m venv /workspace/venv
+EOF
 
+ENV PATH=/workspace/venv/bin:$PATH
 
 FROM python-base AS python-polygen
 ARG pip_mirror=https://pypi.python.org/simple
@@ -48,33 +50,45 @@ ENTRYPOINT ["python3", "randsrv.py", "--port", "9000"]
 FROM ubuntu:24.04 AS syslogsrv
 ARG git_proxy
 WORKDIR /workspace
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends cmake g++ make git && \
-    apt-get clean && \
+RUN <<EOF
+    apt-get update
+    apt-get install -y --no-install-recommends cmake g++ make git
+    apt-get clean
     rm -rf /var/lib/apt/lists/*  # Remove the apt cache lists to keep image size down
+EOF
+
 COPY ./syslog_server ./
-RUN git config --global http.proxy "${git_proxy}"
-RUN cmake -B build -S . -D WEIR_FETCH_DEPENDENCIES=on && \
+RUN <<EOF
+    git config --global http.proxy "${git_proxy}"
+    cmake -B build -S . -D WEIR_FETCH_DEPENDENCIES=on
     cmake --build ./build -j
+EOF
+
 ENTRYPOINT ["/workspace/build/src/syslog-server", "/workspace/config/syslog_server.localdev.yml"]
 
 FROM ubuntu:24.04 AS haproxy
 ARG git_proxy
 WORKDIR /workspace
 STOPSIGNAL SIGUSR1
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends cmake g++ make git lua5.3 lua5.3-dev libpcre3-dev libssl-dev lua-penlight && \
-    apt-get clean && \
+RUN <<EOF
+    apt-get update
+    apt-get install -y --no-install-recommends cmake g++ make git lua5.3 lua5.3-dev libpcre3-dev libssl-dev lua-penlight
+    apt-get clean
     rm -rf /var/lib/apt/lists/*  # Remove the apt cache lists to keep image size down
-RUN git config --global http.proxy "${git_proxy}"
-RUN git config --global user.email "docker-build@example.com"
-RUN git config --global user.name "Docker Build"
+    git config --global http.proxy "${git_proxy}"
+    git config --global user.email "docker-build@example.com"
+    git config --global user.name "Docker Build"
+EOF
+
 COPY ./haproxy-lua/patches/ ./patches/
 COPY ./haproxy-lua/added-files/ ./added-files/
 COPY ./haproxy-lua/src/ ./src/
 COPY ./haproxy-lua/tests/ ./tests/
 COPY ./haproxy-lua/activate.sh ./
 COPY ./haproxy-lua/CMakeLists.txt ./
-RUN cmake -B build -S . && \
+RUN <<EOF
+    cmake -B build -S .
     cmake --build ./build
+EOF
+
 CMD ["/workspace/haproxy-source/haproxy", "-f", "/workspace/config/haproxy_localdev.conf"]
