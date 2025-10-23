@@ -1,0 +1,38 @@
+---
+name: lint
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    # Run superlinter on pushes to default branch
+    branches:
+      - main
+  # Run superlinter on pull request events
+  pull_request:
+
+# Declare default permissions as read-only
+permissions: read-all
+
+jobs:
+  super-linter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+    steps:
+      - name: 🔒 harden runner
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a  # v2.13.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 🧹 run superlinter
+        uses: super-linter/super-linter@ffde3b2b33b745cb612d787f669ef9442b1339a6  # v8.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINTER_RULES_PATH: "."
+          MYPY_CONFIG_FILE: "mypy.ini"
+          YAML_CONFIG_FILE: ".yamllint.yml"
+          MULTI_STATUS: false
