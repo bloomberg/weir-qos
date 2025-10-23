@@ -1,37 +1,37 @@
 # Architectural Overview of the Weir QoS Framework
 
 This framework is designed to provide Quality of Service for a cluster of HTTP
-servers at a per-user level (rather than a per-IP level). Where a "user" is defined by some unique key provided in each request,
-for example users accessing an [S3 endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html)
+servers at a per-user level (rather than a per-IP level), where a "user" is defined by some unique key provided in each request.
+For example, users accessing an [S3 endpoint](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html)
 would be identified by their [access keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/security-creds.html).
 
 Each user can have different types of limits applied to them:
 
-- Bandwidth limit (e.g 50MB/s of total upload)
-- Request rate limit (applied per HTTP verb, e.g 100 GET requests/s)
-- Concurrent request limit (e.g 10 active requests running concurrently)
+- Bandwidth limit (e.g., 50MB/s of total upload)
+- Request rate limit (applied per HTTP verb, e.g., 100 GET requests/s)
+- Concurrent request limit (e.g., 10 active requests running concurrently)
 
 These limits are all defined for each user and enforced cluster-wide, meaning that
-aggregate usage for that user across all HTTP servers will be restricted to not exceed
+aggregate usage for that user across all HTTP servers will be restricted so as not to exceed
 these limits.
 
 ## High-level Methodology
 
-We take a reactive, rather than a proactive approach to rate limiting.
-This means that rather than consult a central store in a blocking fashion before enacting each request,
-we permit all requests by default and collect the corresponding usage data. Once a user exceeds their limit
+We take a reactive approach to rate limiting, rather than a proactive one.
+This means that, rather than consult a central store in a blocking fashion before enacting each request,
+we permit all requests by default and collect the corresponding usage data. Once a user exceeds their limit,
 we throttle them to bring them back in line with their intended limits.
 
 ## System Components
 
-Weir has 4 main components:
+Weir QoS has 4 main components:
 
-- [HAProxy](https://www.haproxy.org/), for which we include some minor modifications to report usage and enforce limits and extended with lua scripts for logic specific to your use-case
+- [HAProxy](https://www.haproxy.org/), for which we include some minor modifications to report usage and enforce limits and extended with Lua scripts for logic specific to your use case
 - [Redis](https://redis.io/), which stores all of the observed usage across the system
 - [A custom syslog server](#syslog-server), which collects logs and usage data from HAProxy and aggregates it into Redis
-- [A "Policy Generator"](#policy-generator), which continuously checks Redis for updated usage data and sends "policies" back to haproxy for it to enact to throttle the appropriate users
+- [A "Policy Generator"](#policy-generator), which continuously checks Redis for updated usage data and sends "policies" back to HAProxy for it to throttle the appropriate users
 
-There's also a separate "metrics exposer" which reads usage data from Redis and makes it available as Prometheus-compatible metrics.
+There's also a separate "metrics exposer" that reads usage data from Redis and makes it available as Prometheus-compatible metrics.
 
 The diagram below shows how these components fit together:
 
@@ -44,7 +44,7 @@ HAProxy runs on each HTTP server and forwards incoming requests to the local app
 To do this, we use a version of HAProxy that has:
 
 1. Had its source modified slightly to emit necessary control messages as logs and to provide additional bandwidth-limiting functionality
-1. Been extended with lua script to handle some of the generic request-limiting logic, to provide the logic that is specific to your use-case (e.g for extracting user keys from each request), and to listen for incoming control messages from the [policy generator](#policy-generator)
+1. Been extended with Lua scripts to handle some of the generic request-limiting logic, to provide the logic that is specific to your use case (e.g., for extracting user keys from each request), and to listen for incoming control messages from the [policy generator](#policy-generator)
 1. Been configured to send log messages to the local instance of the [weir syslog server](#syslog-server)
 
 ### Syslog Server
@@ -61,7 +61,7 @@ Some examples of such control messages are:
 
 Redis runs on a central server and aggregates all of the usage data sent (via syslog server) from HAProxy.
 
-Data is aggregated separately for each user and for each type of usage (quantity of data transferred, number of requests made recently, current number of active requests).
+Data is aggregated separately for each user and for each type of usage (e.g., quantity of data transferred, number of requests made recently, current number of active requests).
 
 ### Policy Generator
 
