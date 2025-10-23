@@ -55,7 +55,7 @@ If you're just running the project to try it out, the Docker build will handle e
 The instructions below are for building it outside of Docker (e.g., for development purposes).
 
 The build process is orchestrated with CMake and covers building HAProxy and the syslog server.
-To build the project, run the following commands from the root of the repository to build the project and run the unit tests:
+To build the project and run the unit tests, run the following commands from the root of the repository:
 
 ```console
 cmake -B build -S . -DWEIR_FETCH_DEPENDENCIES=ON -DCMAKE_BUILD_TYPE=Debug -DWEIR_HAPROXY_REPO_URL=https://github.com/haproxy/haproxy.git
