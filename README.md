@@ -81,15 +81,12 @@ Once running:
 - Metrics will be available in Prometheus format at `http://localhost:9005/metrics`. If you prefer a push model for metrics, [qos_metrics_publisher.py](./polygen/qos_metrics_publisher.py) is an example of this, periodically writing metric values to stdout or file.
 - Limits can be live updated by following the process [described here](./polygen/README.md).
 
-## Contributions
+## Contributing
 
-We :heart: contributions.
-
-Have you had a good experience with this project? Why not share some love and contribute code, or just let us know about any issues you had with it?
-
-We welcome issue reports [here](../../issues); please use the [ISSUE_TEMPLATE](ISSUE_TEMPLATE.md) for your issue, so that we can be sure you're providing the necessary information.
-
-Before sending a [Pull Request](../../pulls), please make sure you read our [Contribution Guidelines](CONTRIBUTING.md).
+Contributions are what make the open source community such an amazing place to
+learn, inspire, and create. Any contributions you make are **greatly
+appreciated**. For detailed contributing guidelines, please see
+[CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 

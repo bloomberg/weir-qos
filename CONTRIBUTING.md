@@ -1,54 +1,55 @@
-# Contributing to this project
+# How to Contribute
 
-We welcome your contributions to help us improve and extend this project!
+Thanks for your interest in contributing to Weir-QoS! Here are a few
+general guidelines on contributing and reporting bugs that we ask you to review.
+Following these guidelines helps to communicate that you respect the time of the
+contributors managing and developing this open source project. In return, they
+should reciprocate that respect in addressing your issue, assessing changes, and
+helping you finalize your pull requests. In that spirit of mutual respect, we
+endeavor to review incoming issues and pull requests within 10 days, and will
+close any lingering issues or pull requests after 60 days of inactivity.
 
-Below you will find some basic steps required to be able to contribute to the project. If
-you have any questions about this process or any other aspect of contributing to a Bloomberg open
-source project, feel free to send an email to opensource@bloomberg.net and we'll get your questions
-answered as quickly as we can.
+Please note that all of your interactions in the project are subject to our
+[Code of Conduct](https://github.com/bloomberg/.github/blob/main/CODE_OF_CONDUCT.md).
+This includes creation of issues or pull requests, commenting on issues or pull requests,
+and extends to all interactions in any real-time space e.g., Slack, Discord, etc.
 
-## Contribution Licensing
+## Reporting Issues
 
-Since this project is distributed under the terms of an [open source license](LICENSE), contributions that you make
-are licensed under the same terms. In order for us to be able to accept your contributions,
-we will need explicit confirmation from you that you are able and willing to provide them under
-these terms, and the mechanism we use to do this is called a Developer's Certificate of Origin
-[(DCO)](DCO.md).  This is very similar to the process used by the Linux(R) kernel, Samba, and many
-other major open source projects.
+Before reporting a new issue, please ensure that the issue was not already
+reported or fixed by searching through our [issues
+list](https://github.com/bloomberg/weir-qos/issues).
 
-To participate under these terms, all that you must do is include a line like the following as the
-last line of the commit message for each commit in your contribution:
+When creating a new issue, please be sure to include a **title and clear
+description**, as much relevant information as possible, and, if possible, a
+test case.
 
-    Signed-Off-By: Random J. Developer <random@developer.example.org>
+**If you discover a security bug, please do not report it through GitHub.
+Instead, please see security procedures in [SECURITY.md](/SECURITY.md).**
 
-The simplest way to accomplish this is to add `-s` or `--signoff` to your `git commit` command.
+## Sending Pull Requests
 
-You must use your real name (sorry, no pseudonyms, and no anonymous contributions).
+Before sending a new pull request, take a look at existing pull requests and
+issues to see if the proposed change or fix has been discussed in the past, or
+if the change was already implemented but not yet released.
 
-## Steps
+We expect new pull requests to include tests for any affected behavior, and, as
+we follow semantic versioning, we may reserve breaking changes until the next
+major version release.
 
-- Create an Issue, selecting 'Feature Request', and explain the proposed change.
-- Follow the guidelines in the issue template presented to you.
-- Submit the Issue.
-- Submit a Pull Request and link it to the Issue by including "#<issue number>" in the Pull Request summary.
+## Other Ways to Contribute
 
-## Help / Documentation
+We welcome anyone that wants to contribute to Weir-QoS to triage and
+reply to open issues to help troubleshoot and fix existing bugs. Here is what
+you can do:
 
-Please see the project's README to get started.
+- Help ensure that existing issues follows the recommendations from the
+  _[Reporting Issues](#reporting-issues)_ section, providing feedback to the
+  issue's author on what might be missing.
+- Review existing pull requests, and testing patches against real existing
+  applications that use Weir-QoS.
+- Write a test, or add a missing test case to an existing test.
 
-## Code of Conduct
+Thanks again for your interest on contributing to Weir-QoS!
 
-This project has adopted a [Code of Conduct](CODE_OF_CONDUCT.md). If you have any concerns about the Code, or behavior
-which you have experienced in the project, please contact us at opensource@bloomberg.net.
-
-## Security Vulnerability Reporting
-
-If you believe you have identified a security vulnerability in this project, please send email to the project
-team at opensource@bloomberg.net, detailing the suspected issue and any methods you've found to reproduce it.
-
-Please do NOT open an issue in the GitHub repository, as we'd prefer to keep vulnerability reports private until
-we've had an opportunity to review and address them.
-
-## Licensing
-
-See the LICENSE file in the top directory of the project repository for licensing information about the project.
+:heart:
