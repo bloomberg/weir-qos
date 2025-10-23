@@ -63,7 +63,7 @@ cmake --build ./build
 ctest --verbose --test-dir ./build
 ```
 
-The build exposes three (3) flags, all of which are optional:
+The build exposes several flags, all of which are optional:
 
 - [WEIR_FETCH_DEPENDENCIES](./syslog_server/README.md), to fetch and build dependencies from the source.
 - [WEIR_HAPROXY_REPO_URL](./haproxy-lua/README.md), to overwrite the remote from which to pull the upstream haproxy source.
