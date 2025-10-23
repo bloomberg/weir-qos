@@ -14,11 +14,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+      run: cmake -B build -S . -DWEIR_FETCH_DEPENDENCIES=ON -DCMAKE_BUILD_TYPE=Debug -DWEIR_HAPROXY_REPO_URL=https://github.com/haproxy/haproxy.git
+    - name: build
+      run: cmake --build ./build
+    - name: test
+      run: ctest --verbose --test-dir ./build
 
