@@ -53,10 +53,10 @@ test_get_access_key_from_query_string = {}
         lu.assertEquals(get_access_key(headers, query_params), "common")
 
         -- v4
-        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=09X731XZJOC1U660NN51/20221205/us-east-1/s3/aws4_request&X-Amz-Date=20221205T184410Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=signature")), "09X731XZJOC1U660NN51")
-        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-AMZ-CREDENTIAL=09X731XZJOC1U660NN51/20221205/us-east-1/s3/aws4_request")), "09X731XZJOC1U660NN51")
-        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-AMZ-CREDENTIAL=09X731XZJOC1U660NN51%2F20221205%2Fus-east-1%2Fs3%2Faws4_request")), "09X731XZJOC1U660NN51")
-        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-amz-CRedentiAL=09X731XZJOC1U660NN51")), "09X731XZJOC1U660NN51")
+        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20221205/us-east-1/s3/aws4_request&X-Amz-Date=20221205T184410Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=signature")), "AKIAIOSFODNN7EXAMPLE")
+        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-AMZ-CREDENTIAL=AKIAIOSFODNN7EXAMPLE/20221205/us-east-1/s3/aws4_request")), "AKIAIOSFODNN7EXAMPLE")
+        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-AMZ-CREDENTIAL=AKIAIOSFODNN7EXAMPLE%2F20221205%2Fus-east-1%2Fs3%2Faws4_request")), "AKIAIOSFODNN7EXAMPLE")
+        lu.assertEquals(get_access_key(headers, get_decoded_query_params("X-amz-CRedentiAL=AKIAIOSFODNN7EXAMPLE")), "AKIAIOSFODNN7EXAMPLE")
         lu.assertEquals(get_access_key(headers, get_decoded_query_params("")), "common")
         lu.assertEquals(get_access_key(headers, get_decoded_query_params(" ")), "common")
         lu.assertEquals(get_access_key(headers, get_decoded_query_params("a=1&b=2")), "common")

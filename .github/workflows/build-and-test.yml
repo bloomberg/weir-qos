@@ -1,10 +1,13 @@
 name: build-and-test
 
-on:
+on:  # yamllint disable-line rule:truthy
   push:
     branches:
       - "main"
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -12,13 +15,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: install deps
-      run: sudo apt-get install -y --no-install-recommends cmake g++ make git lua5.3 lua5.3-dev libpcre3-dev libssl-dev lua-penlight
-    - name: configure
-      run: cmake -B build -S . -DWEIR_FETCH_DEPENDENCIES=ON -DCMAKE_BUILD_TYPE=Debug -DWEIR_HAPROXY_REPO_URL=https://github.com/haproxy/haproxy.git
-    - name: build
-      run: cmake --build ./build
-    - name: test
-      run: ctest --verbose --test-dir ./build
-
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: install deps
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ make git lua5.3 lua5.3-dev libpcre3-dev libssl-dev lua-penlight
+      - name: configure
+        run: |
+          cmake -B build -S . \
+            -DWEIR_FETCH_DEPENDENCIES=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DWEIR_HAPROXY_REPO_URL=https://github.com/haproxy/haproxy.git
+      - name: build
+        run: cmake --build ./build
+      - name: test
+        run: ctest --verbose --test-dir ./build
