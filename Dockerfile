@@ -11,7 +11,6 @@ RUN <<EOF
     rm -rf /var/lib/apt/lists/*  # Remove the apt cache lists to keep image size down
     python3 -m venv /workspace/venv
 EOF
-
 ENV PATH=/workspace/venv/bin:$PATH
 
 FROM python-base AS python-polygen
@@ -56,15 +55,14 @@ RUN <<EOF
     apt-get clean
     rm -rf /var/lib/apt/lists/*  # Remove the apt cache lists to keep image size down
 EOF
-
 COPY ./syslog_server ./
 RUN <<EOF
     git config --global http.proxy "${git_proxy}"
     cmake -B build -S . -D WEIR_FETCH_DEPENDENCIES=on
     cmake --build ./build -j
 EOF
-
 ENTRYPOINT ["/workspace/build/src/syslog-server", "/workspace/config/syslog_server.localdev.yml"]
+
 
 FROM ubuntu:24.04 AS haproxy
 ARG git_proxy
@@ -79,7 +77,6 @@ RUN <<EOF
     git config --global user.email "docker-build@example.com"
     git config --global user.name "Docker Build"
 EOF
-
 COPY ./haproxy-lua/patches/ ./patches/
 COPY ./haproxy-lua/added-files/ ./added-files/
 COPY ./haproxy-lua/src/ ./src/
@@ -90,5 +87,4 @@ RUN <<EOF
     cmake -B build -S .
     cmake --build ./build
 EOF
-
 CMD ["/workspace/haproxy-source/haproxy", "-f", "/workspace/config/haproxy_localdev.conf"]
