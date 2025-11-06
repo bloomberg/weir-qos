@@ -28,8 +28,10 @@ done
 
 WEIR_HAPROXY_BASE_COMMIT=$(cat ./.haproxy-activated-commit)
 rm ./.haproxy-activated-commit
-rm ./patches/* # Remove existing patches so that we don't get leftover unexpected patches if we change a commit message
 
+# Remove existing patches so that we don't get leftover unexpected patches if we change a commit message.
+# Force so we don't fail if there aren't any or they've already been deleted somehow
+rm --force ./patches/*
 
 # Move added-files out of the repo. This both updates our added-files and also ensures
 # that they don't form part of the patch set that we're about to generate.
