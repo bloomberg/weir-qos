@@ -5,36 +5,36 @@ Subject: [PATCH] Add old-rate-limit-system-specific hlua and Makefile changes
 
 ---
  Makefile   |   2 +-
- src/hlua.c | 105 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 106 insertions(+), 1 deletion(-)
+ src/hlua.c | 102 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 102 insertions(+), 2 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index 82fcf529d..ae2e7528f 100644
+index 3a099edbc..413534fa1 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -940,7 +940,7 @@ OBJS += src/mux_h2.o src/mux_fcgi.o src/mux_h1.o src/tcpcheck.o               \
-         src/dynbuf.o src/wdt.o src/pipe.o src/init.o src/http_acl.o           \
-         src/hpack-huff.o src/hpack-enc.o src/dict.o src/freq_ctr.o            \
-         src/ebtree.o src/hash.o src/dgram.o src/version.o
+@@ -993,7 +993,7 @@ OBJS += src/mux_h2.o src/mux_h1.o src/mux_fcgi.o src/log.o		\
+         src/http_acl.o src/dict.o src/dgram.o src/pipe.o		\
+         src/hpack-huff.o src/hpack-enc.o src/ebtree.o src/hash.o	\
+         src/version.o
 -OBJS += src/flt_weir.o
 +OBJS += src/flt_weir.o src/rate_limit.o
  
  ifneq ($(TRACE),)
    OBJS += src/calltrace.o
 diff --git a/src/hlua.c b/src/hlua.c
-index 010645042..aadfa7809 100644
+index 875f6113d..a9263daed 100644
 --- a/src/hlua.c
 +++ b/src/hlua.c
-@@ -68,6 +68,7 @@
+@@ -69,6 +69,7 @@
  #include <haproxy/event_hdl.h>
  #include <haproxy/check.h>
  #include <haproxy/mailers.h>
 +#include <haproxy/rate_limit.h>
  
- /* Lua uses longjmp to perform yield or throwing errors. This
-  * macro is used only for identifying the function that can
-@@ -1862,6 +1863,39 @@ __LJMP static int hlua_done(lua_State *L)
- 	return 0;
+ /* Global LUA flags */
+ 
+@@ -14067,6 +14068,101 @@ __LJMP static int hlua_ingest_weir_limit_share_update(lua_State *L)
+ 	return 1;
  }
  
 +/* This function set the jitter range for data segments transfer post bandwidth throttling. */
@@ -68,15 +68,6 @@ index 010645042..aadfa7809 100644
 +
 +	return 1;
 +}
-+
-+
- /* Handle receipt of a new limit-share update, instructing the local instance on what limit to apply to a given key.
-  * In lua code, this is called as ingest_weir_limit_share(timestamp_seconds, key, instance, "up"|"down", limit)
-  * Example: ingest_weir_limit_share("1716197521", "myaccesskey", "1f2e3d4c", "down", "4096")
-@@ -1891,6 +1925,44 @@ __LJMP static int hlua_ingest_weir_limit_share_update(lua_State *L)
- 	return 1;
- }
- 
 +
 +/* This function throttle the speed for a key.
 + *  In lua code, this is called as throttle_key_speed(key,"upload"|"download",epoch_sec, diff_ratio)
@@ -114,14 +105,6 @@ index 010645042..aadfa7809 100644
 +	return 1;
 +}
 +
-+
- /* This function is an LUA binding. It provides a function
-  * for deleting ACL from a referenced ACL file.
-  */
-@@ -6299,6 +6371,23 @@ static int hlua_http_req_set_uri(lua_State *L)
- 	return 1;
- }
- 
 +/* This function map a ip/port pair to a key.
 +*  The key will be used for speed limiting.
 +*  Lua code looks like txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), speed_access_key)
@@ -139,13 +122,6 @@ index 010645042..aadfa7809 100644
 +	return 0;
 +}
 +
- /* This function set the response code & optionally reason. */
- static int hlua_http_res_set_status(lua_State *L)
- {
-@@ -6314,6 +6403,17 @@ static int hlua_http_res_set_status(lua_State *L)
- 	return 0;
- }
- 
 +static int hlua_http_res_get_status(lua_State *L)
 +{
 +    struct hlua_txn *htxn = MAY_LJMP(hlua_checkhttp(L, 1));
@@ -156,11 +132,10 @@ index 010645042..aadfa7809 100644
 +    }
 +    return 0;
 +}
-+
- /*
-  *
-  *
-@@ -13257,6 +13357,9 @@ lua_State *hlua_init_state(int thread_num)
+ 
+ /* This function can fail with an abort() due to a Lua critical error.
+  * We are in the initialisation process of HAProxy, this abort() is
+@@ -14191,6 +14287,9 @@ lua_State *hlua_init_state(int thread_num)
  	hlua_class_function(L, "done", hlua_done);
  	hlua_class_function(L, "disable_legacy_mailers", hlua_disable_legacy_mailers);
  	hlua_class_function(L, "ingest_weir_limit_share_update", hlua_ingest_weir_limit_share_update);
@@ -170,7 +145,7 @@ index 010645042..aadfa7809 100644
  	hlua_fcn_reg_core_fcn(L);
  
  	lua_setglobal(L, "core");
-@@ -13505,6 +13608,7 @@ lua_State *hlua_init_state(int thread_num)
+@@ -14439,6 +14538,7 @@ lua_State *hlua_init_state(int thread_num)
  	hlua_class_function(L, "req_set_path",   hlua_http_req_set_path);
  	hlua_class_function(L, "req_set_query",  hlua_http_req_set_query);
  	hlua_class_function(L, "req_set_uri",    hlua_http_req_set_uri);
@@ -178,14 +153,15 @@ index 010645042..aadfa7809 100644
  
  	hlua_class_function(L, "res_get_headers",hlua_http_res_get_headers);
  	hlua_class_function(L, "res_del_header", hlua_http_res_del_hdr);
-@@ -13513,6 +13617,7 @@ lua_State *hlua_init_state(int thread_num)
+@@ -14447,7 +14547,7 @@ lua_State *hlua_init_state(int thread_num)
  	hlua_class_function(L, "res_add_header", hlua_http_res_add_hdr);
  	hlua_class_function(L, "res_set_header", hlua_http_res_set_hdr);
  	hlua_class_function(L, "res_set_status", hlua_http_res_set_status);
+-
 +	hlua_class_function(L, "res_get_status", hlua_http_res_get_status);
- 
  	lua_rawset(L, -3);
  
+ 	/* Register previous table in the registry with reference and named entry. */
 -- 
 2.43.0
 

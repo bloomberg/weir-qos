@@ -4,53 +4,28 @@ Date: Mon, 28 Apr 2025 11:43:51 +0100
 Subject: [PATCH] Initial commit of Weir QoS
 
 ---
- Makefile       |  1 +
- src/freq_ctr.c | 13 +++++++++++++
- src/hlua.c     | 30 ++++++++++++++++++++++++++++++
- 3 files changed, 44 insertions(+)
+ Makefile   |  1 +
+ src/hlua.c | 31 +++++++++++++++++++++++++++++++
+ 2 files changed, 32 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index 11096c223..82fcf529d 100644
+index 1959ac479..3a099edbc 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -940,6 +940,7 @@ OBJS += src/mux_h2.o src/mux_fcgi.o src/mux_h1.o src/tcpcheck.o               \
-         src/dynbuf.o src/wdt.o src/pipe.o src/init.o src/http_acl.o           \
-         src/hpack-huff.o src/hpack-enc.o src/dict.o src/freq_ctr.o            \
-         src/ebtree.o src/hash.o src/dgram.o src/version.o
+@@ -993,6 +993,7 @@ OBJS += src/mux_h2.o src/mux_h1.o src/mux_fcgi.o src/log.o		\
+         src/http_acl.o src/dict.o src/dgram.o src/pipe.o		\
+         src/hpack-huff.o src/hpack-enc.o src/ebtree.o src/hash.o	\
+         src/version.o
 +OBJS += src/flt_weir.o
  
  ifneq ($(TRACE),)
    OBJS += src/calltrace.o
-diff --git a/src/freq_ctr.c b/src/freq_ctr.c
-index 9b001e326..58eb4b749 100644
---- a/src/freq_ctr.c
-+++ b/src/freq_ctr.c
-@@ -207,6 +207,19 @@ int freq_ctr_overshoot_period(const struct freq_ctr *ctr, uint period, uint freq
- 		return 0;
- 	}
- 
-+	if (unlikely(elapsed > 2 * period)) {
-+		/* The counter was last used further into the past than the previous period,
-+		 * so by definition there is no overshoot.
-+		 * We need to check this because otherwise if you use a counter, wait a long time,
-+		 * and then try to use the counter again, this 32-bit division below will overflow
-+		 * and we'll erroneously return a very large overshoot.
-+		 * For example if period=2^10 (~1s) and freq=2^23 (8mb if we're counting bandwidth)
-+		 * and if we note that INT_MAX~=2^31 then we'll overflow if
-+		 * `elapsed > (period*INT_MAX)/freq`, or with actual values:
-+		 * `elapsed > 2^18 which is a little over 4 minutes */
-+		return 0;
-+	}
-+
- 	return curr - div64_32((uint64_t)elapsed * freq, period);
- }
- 
 diff --git a/src/hlua.c b/src/hlua.c
-index 742c82448..28c0b384d 100644
+index 9699936e8..875f6113d 100644
 --- a/src/hlua.c
 +++ b/src/hlua.c
-@@ -1862,6 +1862,35 @@ __LJMP static int hlua_done(lua_State *L)
- 	return 0;
+@@ -14038,6 +14038,36 @@ static void *hlua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+ 	return ptr;
  }
  
 +/* Handle receipt of a new limit-share update, instructing the local instance on what limit to apply to a given key.
@@ -82,10 +57,11 @@ index 742c82448..28c0b384d 100644
 +	return 1;
 +}
 +
- /* This function is an LUA binding. It provides a function
-  * for deleting ACL from a referenced ACL file.
-  */
-@@ -13212,6 +13241,7 @@ lua_State *hlua_init_state(int thread_num)
++
+ /* This function can fail with an abort() due to a Lua critical error.
+  * We are in the initialisation process of HAProxy, this abort() is
+  * tolerated.
+@@ -14160,6 +14190,7 @@ lua_State *hlua_init_state(int thread_num)
  	hlua_class_function(L, "Alert", hlua_log_alert);
  	hlua_class_function(L, "done", hlua_done);
  	hlua_class_function(L, "disable_legacy_mailers", hlua_disable_legacy_mailers);
