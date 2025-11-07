@@ -2,6 +2,9 @@
 
 set -e
 
+# Enable ** for directory expansion in globs, and allow zero matches to result in an empty list
+shopt -s globstar nullglob
+
 SCRIPT_DIR=$(dirname "$0")
 
 if [[ ! -d ./haproxy-source ]]; then
@@ -14,18 +17,27 @@ if [[ ! -f ./.haproxy-activated-commit ]]; then
     exit 1
 fi
 
+# Verify that all added files exist in the repository before we start making changes.
+# This helps avoid us getting into a half-deactivated state.
+for addedfile in "$SCRIPT_DIR"/added-files/**/*.*; do
+    if [[ ! -f "./haproxy-source/${addedfile#"$SCRIPT_DIR"/added-files/}" ]]; then
+        echo "Added file ${addedfile} is not present in the repository, deactivation cancelled to avoid data loss"
+        exit 1
+    fi
+done
+
 WEIR_HAPROXY_BASE_COMMIT=$(cat ./.haproxy-activated-commit)
 rm ./.haproxy-activated-commit
-rm ./patches/* # Remove existing patches so that we don't get leftover unexpected patches if we change a commit message
 
-# Enable ** for directory expansion in globs, and allow zero matches to result in an empty list
-shopt -s globstar nullglob
+# Remove existing patches so that we don't get leftover unexpected patches if we change a commit message.
+# Force so we don't fail if there aren't any or they've already been deleted somehow
+rm --force ./patches/*
 
 # Move added-files out of the repo. This both updates our added-files and also ensures
 # that they don't form part of the patch set that we're about to generate.
 for addedfile in "$SCRIPT_DIR"/added-files/**/*.*; do
     echo "Moving $addedfile out of the haproxy source tree..."
-    mv "./haproxy-source/${addedfile#"$SCRIPT_DIR"/added-files}" "$addedfile"
+    mv "./haproxy-source/${addedfile#"$SCRIPT_DIR"/added-files/}" "$addedfile"
 done
 
 # Ensure there are no uncommitted changes. This serves 3 functions:
