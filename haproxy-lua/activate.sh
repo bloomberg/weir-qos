@@ -46,6 +46,10 @@ shopt -s globstar nullglob
 # files located directly in this repo. We still need patches for a few minor modifications but
 # the overwhelming majority of our changes should be to newly-added files, making reviews just
 # as easy as for any other change.
+# We do this *before* applying patches so that if there is a conflict when applying those patches
+# (as there could be when upgrading the base version of haproxy), then once the failed patches
+# have been manually applied, the source directory will be in the correct fully-activated state
+# and can simply be deactivated again to get the updated patches out.
 for addedfile in "$SCRIPT_DIR"/added-files/**/*.*; do
     echo "Copying $addedfile to the haproxy source tree..."
     cp "$addedfile" "$HAPROXY_SOURCE_DIR/${addedfile#"$SCRIPT_DIR"/added-files}"
