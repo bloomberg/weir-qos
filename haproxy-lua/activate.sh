@@ -23,20 +23,6 @@ fi
 git -C  "$HAPROXY_SOURCE_DIR" checkout $WEIR_HAPROXY_BASE_COMMIT
 git -C  "$HAPROXY_SOURCE_DIR" show-ref -s $WEIR_HAPROXY_BASE_COMMIT > "$SCRIPT_DIR"/.haproxy-activated-commit
 
-# If there is no username and email configured on the git repo, configure an example one locally
-# so that we can safely apply the haproxy patches below.
-if ! git -C "$HAPROXY_SOURCE_DIR" config --get user.name; then
-    git -C "$HAPROXY_SOURCE_DIR" config --local user.name HAProxyBuild
-    git -C "$HAPROXY_SOURCE_DIR" config --local user.email haproxybuild@example.com
-fi
-
-# Apply our set of patches.
-# We specifically *do* want the realpath output to be split on the
-# line below so that git will apply all the patches for us.
-# shellcheck disable=SC2046
-git -C "$HAPROXY_SOURCE_DIR" am  $(realpath "$SCRIPT_DIR"/patches/*)
-
-
 # Enable ** for directory expansion in globs, and allow zero matches to result in an empty list
 shopt -s globstar nullglob
 
@@ -54,5 +40,18 @@ for addedfile in "$SCRIPT_DIR"/added-files/**/*.*; do
     echo "Copying $addedfile to the haproxy source tree..."
     cp "$addedfile" "$HAPROXY_SOURCE_DIR/${addedfile#"$SCRIPT_DIR"/added-files}"
 done
+
+# If there is no username and email configured on the git repo, configure an example one locally
+# so that we can safely apply the haproxy patches below.
+if ! git -C "$HAPROXY_SOURCE_DIR" config --get user.name; then
+    git -C "$HAPROXY_SOURCE_DIR" config --local user.name HAProxyBuild
+    git -C "$HAPROXY_SOURCE_DIR" config --local user.email haproxybuild@example.com
+fi
+
+# Apply our set of patches.
+# We specifically *do* want the realpath output to be split on the
+# line below so that git will apply all the patches for us.
+# shellcheck disable=SC2046
+git -C "$HAPROXY_SOURCE_DIR" am  $(realpath "$SCRIPT_DIR"/patches/*)
 
 echo "Activation complete"
