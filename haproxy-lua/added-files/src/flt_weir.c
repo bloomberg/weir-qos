@@ -381,7 +381,7 @@ struct apply_limit_result {
 static struct apply_limit_result apply_bandwidth_limit(struct freq_ctr* counter, uint limit, int requests,
                                                        unsigned int bytes_available) {
     unsigned int quota_bytes_remaining = 0;
-    int overshoot_bytes = 0;
+    unsigned int overshoot_bytes = 0;
     const uint64_t period_ms = 1000; // All our limits are defined per-second, so the counting period is 1000ms
     const uint64_t max_wait_ms =
         2 * period_ms; // We operate on a sliding window of 2 periods, so never wait for longer than that
