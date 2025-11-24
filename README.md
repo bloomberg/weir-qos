@@ -7,7 +7,6 @@
 - [Contributions](#contributions)
 - [License](#license)
 - [Code of Conduct](#code-of-conduct)
-- [Security Vulnerability Reporting](#security-vulnerability-reporting)
 
 ## Rationale
 
