@@ -48,6 +48,8 @@ If you want to compare that to what would have happened had it not been limited,
 curl http://localhost:9000/10gb > /dev/null
 ```
 
+Note that for now this depends on Docker's host networking mode, which is not supported on Mac.
+
 ## Building
 
 If you're just running the project to try it out, the Docker build will handle everything for you.
