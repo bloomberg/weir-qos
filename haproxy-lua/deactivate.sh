@@ -53,6 +53,12 @@ if (! git -C ./haproxy-source diff --quiet) || (! git -C ./haproxy-source diff -
 fi
 
 echo "Formatting patches starting at $WEIR_HAPROXY_BASE_COMMIT"
+# We specify `--zero-commit` so that the hash and timestamp of each commit is always zero. If we did not do this then every time
+# you ran this script, it would give you a set of patches all of which would have been "modified" but only because the hash
+# and timestamp has changed. This is likely to lead to many commits with no actual content or significant development overhead
+# needing to constantly undo these changes.
+# We specify `--no-numbered` for the same reason: Without it patches are numbered as [PATCH x/y] and every time we add a patch,
+# `y` would change, resulting in all previous patches showing up as modified.
 git -C ./haproxy-source format-patch --output-directory ../patches --zero-commit --no-numbered "${WEIR_HAPROXY_BASE_COMMIT}...HEAD"
 
 echo "Deactivation complete"

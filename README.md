@@ -7,7 +7,6 @@
 - [Contributions](#contributions)
 - [License](#license)
 - [Code of Conduct](#code-of-conduct)
-- [Security Vulnerability Reporting](#security-vulnerability-reporting)
 
 ## Rationale
 
@@ -48,6 +47,8 @@ If you want to compare that to what would have happened had it not been limited,
 ```sh
 curl http://localhost:9000/10gb > /dev/null
 ```
+
+Note that for now this depends on Docker's host networking mode, which is not supported on Mac.
 
 ## Building
 

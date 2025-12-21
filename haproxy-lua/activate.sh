@@ -23,6 +23,24 @@ fi
 git -C  "$HAPROXY_SOURCE_DIR" checkout $WEIR_HAPROXY_BASE_COMMIT
 git -C  "$HAPROXY_SOURCE_DIR" show-ref -s $WEIR_HAPROXY_BASE_COMMIT > "$SCRIPT_DIR"/.haproxy-activated-commit
 
+# Enable ** for directory expansion in globs, and allow zero matches to result in an empty list
+shopt -s globstar nullglob
+
+# Copy into the repo any entirely new files that we've added.
+# These are tracked here instead of as part of the patch files simply because reviewing changes
+# to the patch files in this repo is much more painful and difficult than reviewing changes to
+# files located directly in this repo. We still need patches for a few minor modifications but
+# the overwhelming majority of our changes should be to newly-added files, making reviews just
+# as easy as for any other change.
+# We do this *before* applying patches so that if there is a conflict when applying those patches
+# (as there could be when upgrading the base version of haproxy), then once the failed patches
+# have been manually applied, the source directory will be in the correct fully-activated state
+# and can simply be deactivated again to get the updated patches out.
+for addedfile in "$SCRIPT_DIR"/added-files/**/*.*; do
+    echo "Copying $addedfile to the haproxy source tree..."
+    cp "$addedfile" "$HAPROXY_SOURCE_DIR/${addedfile#"$SCRIPT_DIR"/added-files}"
+done
+
 # If there is no username and email configured on the git repo, configure an example one locally
 # so that we can safely apply the haproxy patches below.
 if ! git -C "$HAPROXY_SOURCE_DIR" config --get user.name; then
@@ -35,20 +53,5 @@ fi
 # line below so that git will apply all the patches for us.
 # shellcheck disable=SC2046
 git -C "$HAPROXY_SOURCE_DIR" am  $(realpath "$SCRIPT_DIR"/patches/*)
-
-
-# Enable ** for directory expansion in globs, and allow zero matches to result in an empty list
-shopt -s globstar nullglob
-
-# Copy into the repo any entirely new files that we've added.
-# These are tracked here instead of as part of the patch files simply because reviewing changes
-# to the patch files in this repo is much more painful and difficult than reviewing changes to
-# files located directly in this repo. We still need patches for a few minor modifications but
-# the overwhelming majority of our changes should be to newly-added files, making reviews just
-# as easy as for any other change.
-for addedfile in "$SCRIPT_DIR"/added-files/**/*.*; do
-    echo "Copying $addedfile to the haproxy source tree..."
-    cp "$addedfile" "$HAPROXY_SOURCE_DIR/${addedfile#"$SCRIPT_DIR"/added-files}"
-done
 
 echo "Activation complete"
