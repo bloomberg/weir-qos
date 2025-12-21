@@ -5,26 +5,26 @@ Subject: [PATCH] Initial commit of Weir QoS
 
 ---
  Makefile   |  1 +
- src/hlua.c | 31 +++++++++++++++++++++++++++++++
- 2 files changed, 32 insertions(+)
+ src/hlua.c | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index 1959ac479..3a099edbc 100644
+index 90e791f39..e6be08e58 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -993,6 +993,7 @@ OBJS += src/mux_h2.o src/mux_h1.o src/mux_fcgi.o src/log.o		\
+@@ -1003,6 +1003,7 @@ OBJS += src/mux_h2.o src/mux_h1.o src/mux_fcgi.o src/log.o		\
          src/http_acl.o src/dict.o src/dgram.o src/pipe.o		\
          src/hpack-huff.o src/hpack-enc.o src/ebtree.o src/hash.o	\
-         src/version.o
+         src/httpclient_cli.o src/version.o src/ncbmbuf.o src/ech.o
 +OBJS += src/flt_weir.o
  
  ifneq ($(TRACE),)
    OBJS += src/calltrace.o
 diff --git a/src/hlua.c b/src/hlua.c
-index 9699936e8..875f6113d 100644
+index ec2a8ee7b..2332e29c3 100644
 --- a/src/hlua.c
 +++ b/src/hlua.c
-@@ -14038,6 +14038,36 @@ static void *hlua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+@@ -14010,6 +14010,35 @@ static void *hlua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
  	return ptr;
  }
  
@@ -57,14 +57,13 @@ index 9699936e8..875f6113d 100644
 +	return 1;
 +}
 +
-+
  /* This function can fail with an abort() due to a Lua critical error.
   * We are in the initialisation process of HAProxy, this abort() is
   * tolerated.
-@@ -14160,6 +14190,7 @@ lua_State *hlua_init_state(int thread_num)
+@@ -14132,6 +14161,7 @@ lua_State *hlua_init_state(int thread_num)
  	hlua_class_function(L, "Alert", hlua_log_alert);
  	hlua_class_function(L, "done", hlua_done);
- 	hlua_class_function(L, "disable_legacy_mailers", hlua_disable_legacy_mailers);
+ 	hlua_class_function(L, "use_native_mailers_config", hlua_use_native_mailers_config);
 +	hlua_class_function(L, "ingest_weir_limit_share_update", hlua_ingest_weir_limit_share_update);
  	hlua_fcn_reg_core_fcn(L);
  
