@@ -1,5 +1,9 @@
 ---
-Language:        Cpp
+#
+# Commenting out Language entry as it seems to be incompatible with newer versions and projects
+# that have both C and C++ files. It has been confirmed that lint still works OK for both C and C++ files with this change.
+#
+# Language:        Cpp
 # BasedOnStyle:  LLVM
 AccessModifierOffset: -2
 AlignAfterOpenBracket: Align
