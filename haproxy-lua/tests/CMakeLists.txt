@@ -8,21 +8,9 @@ if(WEIR_FETCH_DEPENDENCIES)
       GIT_REPOSITORY https://github.com/bluebird75/luaunit.git
       GIT_TAG LUAUNIT_V3_4
     )
-    FetchContent_Declare(
-      penlight
-      GIT_REPOSITORY https://github.com/lunarmodules/Penlight.git
-      GIT_TAG 1.13.1
-    )
 
-    FetchContent_MakeAvailable(luaunit penlight)
+    FetchContent_MakeAvailable(luaunit)
 
-    file(
-      CREATE_LINK
-      ${penlight_SOURCE_DIR}/lua/pl
-      ${CMAKE_CURRENT_BINARY_DIR}/pl
-      RESULT sym_res
-      SYMBOLIC
-    )
     configure_file(${luaunit_SOURCE_DIR}/luaunit.lua ${CMAKE_CURRENT_BINARY_DIR} COPYONLY)
 endif()
 
