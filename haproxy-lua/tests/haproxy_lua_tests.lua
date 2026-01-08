@@ -31,6 +31,46 @@ mock_applet = {
     send = function(self, msg) end
 }
 
+test_string_endswith = {}
+    function test_string_endswith:tests()
+        lu.assertEquals(string_endswith("", ""), true)
+        lu.assertEquals(string_endswith("", "a"), false)
+        lu.assertEquals(string_endswith("a", ""), true)
+        lu.assertEquals(string_endswith("a", "a"), true)
+        lu.assertEquals(string_endswith("a", "A"), false) -- case sensitive
+        lu.assertEquals(string_endswith("a", "aa"), false)
+        lu.assertEquals(string_endswith("abc", ""), true)
+        lu.assertEquals(string_endswith("abc", "ab"), false) -- off by one
+        lu.assertEquals(string_endswith("abc", "c"), true)
+        lu.assertEquals(string_endswith("abc", "bc"), true)
+        lu.assertEquals(string_endswith("abc", "abc"), true)
+        lu.assertEquals(string_endswith("abc", " abc"), false)
+        lu.assertEquals(string_endswith("abc", "a"), false)
+        lu.assertEquals(string_endswith("abc", "."), false) -- Lua pattern char
+        lu.assertEquals(string_endswith("ab\0c", "b\0c"), true)     -- \0
+        lu.assertEquals(string_endswith("ab\0c", "b\0d"), false) -- \0
+        lu.assertError(string_endswith, "abc", nil)
+        lu.assertError(string_endswith, nil, "c")
+    end
+
+test_string_split = {}
+    function test_string_split:tests()
+        lu.assertEquals(string_split('', ''), {''})
+        lu.assertEquals(string_split('', 'z'), {})
+        lu.assertEquals(string_split('a', ''), {'a'})
+        lu.assertEquals(string_split('a', 'a'), {'',''})
+        lu.assertEquals(string_split('abc', 'abc'), {'',''})
+        lu.assertEquals(string_split('xabcy', 'abc'), {'x', 'y'})
+        lu.assertEquals(string_split(' 1  2  3 ',' '),{'','1','','2','','3',''})
+        lu.assertEquals(string_split('a*bb*c*ddd','*'),{'a','bb','c','ddd'})
+        lu.assertEquals(string_split('dog:fred:bonzo:alice',':',3), {'dog','fred','bonzo:alice'})
+        lu.assertEquals(string_split('a///','/'),{'a','','',''})
+        lu.assertEquals(string_split('/a//','/'),{'','a','',''})
+        lu.assertEquals(string_split('//a/','/'),{'','','a',''})
+        lu.assertEquals(string_split('///a','/'),{'','','','a'})
+        lu.assertEquals(string_split('///','/'),{'','','',''})
+    end
+
 test_get_access_key_from_header = {}
     function test_get_access_key_from_header:tests()
         local query_params = {}

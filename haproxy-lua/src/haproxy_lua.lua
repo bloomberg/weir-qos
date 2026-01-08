@@ -3,7 +3,6 @@ if not _G.__haproxy_lua_loaded then
   _G.__haproxy_lua_loaded = true
 
 require("os")
-local stringx = require("pl.stringx")
 QOS = {
     UNCLASSIFIED_OP = "",
     CONFIGURED_OPS = {
@@ -18,6 +17,49 @@ QOS = {
     }
 }
 
+-- Returns true if `needle` forms a suffix for `haystack`.
+-- Both arguments are plain strings, not patterns.
+-- The empty string is considered a suffix for any `haystack`.
+-- The empty string itself has no non-empty suffixes.
+function string_endswith(haystack, needle)
+    if #needle > #haystack then
+        return false
+    end
+    local substack = string.sub(haystack, #haystack-#needle + 1, #haystack + 1)
+    return substack == needle
+end
+
+-- Returns a list of substrings of `input` containing the substrings
+-- before *and* after every instance of `delimiter`.
+-- Repeated instances of the delimiter will not be coalesced,
+-- resulting in empty strings in the output list.
+-- If the input begins or ends with the delimiter, the output will begin
+-- or end with an empty string respectively.
+function string_split(input, delimiter, max_entries)
+    if #delimiter == 0 then
+        return {input}
+    end
+    local result = {}
+    local from = 1
+    while from <= #input do
+        local delim_start, delim_end = string.find(input, delimiter, from, true)
+        -- If we don't find the delimiter or have reached the max entries
+        -- already then the last item is just the rest of the string.
+        if (delim_start == nil) or (max_entries ~= nil and #result+1 >= max_entries) then
+            table.insert(result, string.sub(input, from))
+            break
+        end
+
+        table.insert(result, string.sub(input, from, delim_start-1))
+        from = delim_end + 1
+    end
+
+    if string_endswith(input, delimiter) then
+        table.insert(result, "")
+    end
+
+    return result
+end
 
 function validate_access_key(access_key)
     -- an accesskey must be an alphanumeric string with a length of 20 chars
@@ -84,7 +126,7 @@ function parse_access_key_from_auth_header(auth_str)
     local access_key = auth_str:sub(access_key_start_idx, access_key_start_idx + 19)
     -- REMOVE: For STS support, access keys are 19 chars due to a Ceph bug so we need to trim the trailing "/".
     -- The following lines should be removed once Ceph bug is fixed.
-    if stringx.endswith(access_key, "/") then
+    if string_endswith(access_key, "/") then
         access_key = access_key:sub(0, #access_key-1)
     end
 
@@ -386,7 +428,7 @@ function update_violates(line, curr_time)
     -- Example: 1682013607056577,user_bnd_up,AKIAIOSFODNN7EXAMPLE:2.7,AKIAIOSFODNN8EXAMPLE:2.4
     -- Example: user_reqs_block,AKIAIOSFODNN7EXAMPLE
     -- Note that only "bnd" metrics has violation diff ratio
-    local items = stringx.split(line, ",")
+    local items = string_split(line, ",")
     if #items < 2 then
         core.Warning("Received invalid violation: " .. line)
         return
@@ -464,7 +506,7 @@ function update_violates_epoch(items, poli_time_us)
         if k > 2 then
             local acc_key = "unknown"
             local diff_ratio = "1.0"
-            local key_ratio_pair = stringx.split(v, ":")
+            local key_ratio_pair = string_split(v, ":")
             if #key_ratio_pair == 2 then
                 acc_key = key_ratio_pair[1]
                 diff_ratio = key_ratio_pair[2]
@@ -548,7 +590,7 @@ function ingest_policies(applet)
                 if string.find(inputs, "limit_share", 1, true) == 1 then
                     core.Warning("New limit-share message started before the previous one finished, some data could have been dropped")
                 else
-                    local components = stringx.split(inputs, ",")
+                    local components = string_split(inputs, ",")
                     if #components < 3 then
                         core.Warning("Received invalid limit-share update with too few components: "..inputs)
                         break
@@ -562,7 +604,7 @@ function ingest_policies(applet)
                     end
 
                     for i=3, #components do
-                        local instance_components = stringx.split(components[i], "_")
+                        local instance_components = string_split(components[i], "_")
                         if #instance_components ~= 3 then
                             core.Warning("Received invalid instance limit-share update with too few components: "..components[i].." in component "..i.." of input line: "..inputs)
                             has_error = true

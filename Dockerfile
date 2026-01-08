@@ -72,7 +72,7 @@ WORKDIR /workspace
 STOPSIGNAL SIGUSR1
 RUN <<EOF
     apt-get update
-    apt-get install -y --no-install-recommends cmake g++ make git lua5.3 lua5.3-dev libpcre3-dev libssl-dev lua-penlight ca-certificates
+    apt-get install -y --no-install-recommends cmake g++ make git lua5.3 lua5.3-dev libpcre3-dev libssl-dev ca-certificates
     apt-get clean
     rm -rf /var/lib/apt/lists/*  # Remove the apt cache lists to keep image size down
     git config --global http.proxy "${git_proxy}"
