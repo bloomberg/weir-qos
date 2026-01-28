@@ -136,20 +136,15 @@ function is_reqs_violator(curr_time, user)
 end
 
 -- check if current request is a violater, we need to check all catogories.
-function is_violater(cur_time, ip, bucket, user, method)
+function is_violater(cur_time, user, method)
     if is_reqs_violator(cur_time, user) then
        return 1, "requests"
     end     
-    local property_map = {ip=ip, buc=bucket, user=user}
-    -- Example: {user="F1T", buc="test3", ip="1.2.3.4"}
-    -- loop through ip, buc, user; then through "method and bnd"
-    for k, v in pairs(property_map) do
-        -- Example method: 'GET'
-        local vio_key = k .. "_" .. method
-        if vio_map[vio_key] and vio_map[vio_key][cur_time] and vio_map[vio_key][cur_time][v] then
-            core.Debug(vio_key .." exceeded," ..k.."="..v)
-            return 1, "rate"
-        end
+    -- Example: user="F1T" method="GET"
+    local vio_key = "user_" .. method
+    if vio_map[vio_key] and vio_map[vio_key][cur_time] and vio_map[vio_key][cur_time][user] then
+        core.Debug(vio_key .." exceeded," .."user="..user)
+        return 1, "rate"
     end
     return 0, ""
 end
@@ -227,15 +222,15 @@ function get_decoded_query_params(query_string)
     return query_params
 end
 
-local function check_violation(epoch, ip, bucket, user, method_or_op, txn, tag)
-    local violater, vio_type = is_violater(epoch, ip, bucket, user, method_or_op)
+local function check_violation(epoch, user, method_or_op, txn, tag)
+    local violater, vio_type = is_violater(epoch, user, method_or_op)
     if violater ~= 0 then
         local verb = method_or_op
         local size = txn.sf:req_fhdr("Content-Length") or "N/A"
         local label = tag and (vio_type .. tag) or vio_type
         core.Info(string.format(
-            "%s limiting denied request src=%s_%s client_ip=%s user=%s bucket=%s verb=%s size=%s",
-            label, txn.f:src(), txn.f:src_port(), ip, user, bucket, verb, size
+            "%s limiting denied request src=%s_%s user=%s verb=%s size=%s",
+            label, txn.f:src(), txn.f:src_port(), user, verb, size
         ))
     end
     return violater
@@ -248,8 +243,6 @@ core.register_fetches("req_eval", function(txn)
     local headers = txn.http:req_get_headers()
     local query_params = get_decoded_query_params(txn.f:query())
     local access_key = get_access_key(headers, query_params)
-    local bucket = get_bucket(headers, txn)
-    local client_ip = get_client_ip(headers, txn)
     txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), access_key)
     local op_class = classify_request_class(txn)
     txn:set_var("txn.op_class", op_class)
@@ -262,13 +255,13 @@ core.register_fetches("req_eval", function(txn)
     end
 
     local epoch = os.time()
-    local violater = check_violation(epoch, client_ip, bucket, access_key, txn.f:method(), txn)
+    local violater = check_violation(epoch, access_key, txn.f:method(), txn)
     if violater ~= 0 then
         return violater
     end
     -- Check for classified ops violation
     if op_class ~= QOS.UNCLASSIFIED_OP then
-        violater = check_violation(epoch, client_ip, bucket, access_key, op_class, txn, "ops")
+        violater = check_violation(epoch, access_key, op_class, txn, "ops")
         if violater ~= 0 then
             return violater
         end
@@ -381,7 +374,6 @@ end
 -- process violates
 function update_violates(line, curr_time)
     -- Note: epochs are in usec resolution
-    -- Example: 1554318336056379,ip_GET,1.2.3.4
     -- Example: 1554318336056480,user_GET,AKIAIOSFODNN7EXAMPLE,AKIAIOSFODNN8EXAMPLE
     -- Example: 1682013607056577,user_bnd_up,AKIAIOSFODNN7EXAMPLE:2.7,AKIAIOSFODNN8EXAMPLE:2.4
     -- Example: user_reqs_block,AKIAIOSFODNN7EXAMPLE
