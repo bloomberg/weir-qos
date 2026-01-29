@@ -117,20 +117,10 @@ test_get_bucket_name = {}
         lu.assertEquals(get_bucket_name("/bucket1", "s3.dev.com"), "bucket1")
     end
 
-test_is_violater = {}
-    vio_map['ip_GET'] = {}
-    vio_map['ip_GET'][123] = {}
-    vio_map['ip_GET'][123]["1.1.1.1"] = 1
-    function test_is_violater:tests()
-        does_violate, vio_type = is_violater(123, "1.1.1.1", nil, nil, "GET")
-        lu.assertEquals(does_violate, 1)
-        lu.assertEquals(vio_type, "rate")
-    end
-
 test_is_reqs_violater = {}
     reqs_map['access_key1'] = 123456
     function test_is_reqs_violater:tests()
-        does_violate, vio_type = is_violater(123456, "1.1.1.1", nil, "access_key1", nil)
+        does_violate, vio_type = is_violater(123456, "access_key1", nil)
         lu.assertEquals(does_violate, 1)
         lu.assertEquals(vio_type, "requests")
     end
@@ -144,12 +134,12 @@ test_update_violates = {}
         update_violates("user_reqs_block,access_key3",1554318336)
         lu.assertEquals(reqs_map["access_key3"], 1554318336)
 
-        does_violate, vio_type = is_violater(1554318336, nil, nil, "access_key3", "GET")
+        does_violate, vio_type = is_violater(1554318336, "access_key3", "GET")
         lu.assertEquals(does_violate, 1)
         lu.assertEquals(vio_type, "requests")
 
         update_violates("user_reqs_unblock,access_key3",1554318336)
-        does_violate, vio_type = is_violater(1554318336, nil, nil, "access_key3", "GET")
+        does_violate, vio_type = is_violater(1554318336, "access_key3", "GET")
         lu.assertEquals(does_violate, 0)
         lu.assertEquals(vio_type, "")
     end
