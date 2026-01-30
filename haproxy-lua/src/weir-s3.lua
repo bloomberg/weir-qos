@@ -1,3 +1,5 @@
+require("haproxy_lua") -- Required for string_endswith and get_decoded_query_params
+
 QOS = {
     UNCLASSIFIED_OP = "",
     CONFIGURED_OPS = {
