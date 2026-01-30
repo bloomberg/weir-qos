@@ -80,6 +80,7 @@ RUN <<EOF
     git config --global user.name "Docker Build"
 EOF
 
+ENV LUA_PATH=/workspace/src/?.lua
 COPY ./haproxy-lua/patches/ ./patches/
 COPY ./haproxy-lua/added-files/ ./added-files/
 COPY ./haproxy-lua/src/ ./src/

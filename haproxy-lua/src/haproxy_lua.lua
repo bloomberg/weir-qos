@@ -3,19 +3,6 @@ if not _G.__haproxy_lua_loaded then
   _G.__haproxy_lua_loaded = true
 
 require("os")
-QOS = {
-    UNCLASSIFIED_OP = "",
-    CONFIGURED_OPS = {
-        ["LISTOBJECTSV2"] = false,
-        ["LISTMULTIPARTUPLOADS"] = false,
-        ["LISTOBJECTVERSIONS"] = false,
-        ["LISTBUCKETS"] = false,
-        ["LISTOBJECTS"] = false,
-        ["DELETEOBJECTS"] = false,
-        ["DELETEOBJECT"] = false,
-        ["CREATEBUCKET"] = false
-    }
-}
 
 -- Returns true if `needle` forms a suffix for `haystack`.
 -- Both arguments are plain strings, not patterns.
@@ -61,78 +48,6 @@ function string_split(input, delimiter, max_entries)
     return result
 end
 
-function validate_access_key(access_key)
-    -- an accesskey must be an alphanumeric string with a length of 20 chars
-    -- "common" is a special accesskey used when no valid accesskey is located
-    if access_key == nil or string.len(access_key) == 0 then
-        return "common"
-    elseif string.len(access_key) == 20 and not string.match(access_key, "%W") then
-        return access_key
-    -- REMOVE: This is put in place to temporarily support STS.
-    elseif string.len(access_key) == 19 and not string.match(access_key, "%W") then
-        return access_key
-    else
-        core.Warning("Invalid access key: " .. access_key)
-        return "ItIsInvalidAccessKey" -- a special key with length of 20 chars
-    end
-end
-
-
-function parse_access_key_from_query_params(query_params)
-    local access_key = ""
-
-    if query_params then
-        if query_params["x-amz-credential"] then
-            -- For AWS Auth v4: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
-            -- X-Amz-Credential=<your-access-key-id>/<date>/<AWS-Region>/<AWS-service>/aws4_request
-            access_key = string.match(query_params["x-amz-credential"], "^(%w+)")
-        elseif query_params["awsaccesskeyid"] then
-            -- For AWS Auth v2: https://docs.aws.amazon.com/general/latest/gr/signature-version-2.html
-            -- AWSAccessKeyId=<your-access-key-id>
-            access_key = string.match(query_params["awsaccesskeyid"], "^(%w+)")
-        end
-    end
-
-    access_key = validate_access_key(access_key)
-    return access_key
-end
-
-
-function parse_access_key_from_auth_header(auth_str)
-    -- If headers are for a HTTP response, they should be empty
-    -- and there will be no Authorization header
-
-    -- Check whether Authorization header is present, and save it
-    local auth_method = auth_str:sub(1, 4)
-    local access_key_start_idx = nil
-    -- Access key always is of length 20 when system generated
-    if auth_method == "AWS4" then
-        -- For AWS Auth v4
-        -- AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,
-
-        -- Access key starts at index 29
-        access_key_start_idx = 29
-
-   elseif auth_method == "AWS " then
-        -- For AWS Auth v2
-        -- AWS AKIAIOSFODNN7EXAMPLE:frJIUN8DYpKDtOLCwo//yllqDzg=
-        -- Access key starts at index 5
-        access_key_start_idx = 5
-    else
-        core.Warning("Invalid Authorization header format" .. auth_method)
-        return "InvalidAuthorization" -- a special key with a length of 20
-    end
-    -- we can assume all keys are 20 chars as this is an S3 requirement.
-    local access_key = auth_str:sub(access_key_start_idx, access_key_start_idx + 19)
-    -- REMOVE: For STS support, access keys are 19 chars due to a Ceph bug so we need to trim the trailing "/".
-    -- The following lines should be removed once Ceph bug is fixed.
-    if string_endswith(access_key, "/") then
-        access_key = access_key:sub(0, #access_key-1)
-    end
-
-    return validate_access_key(access_key)
-end
-
 vio_map = {}
 reqs_map = {}
 
@@ -166,40 +81,6 @@ function is_violater(cur_time, user, method)
     end
     return 0, ""
 end
-
-function get_access_key(headers, query_params)
-    local access_key = ""
-    if headers and headers["authorization"]  and headers["authorization"][0] then
-        access_key = parse_access_key_from_auth_header(headers["authorization"][0])
-    else
-        access_key = parse_access_key_from_query_params(query_params)
-    end
-
-    return access_key
-end
-
-function get_client_ip(headers, txn)
-    local client_ip = ""
-    if headers and headers["x-forwarded-for"] and headers["x-forwarded-for"][0] then
-        client_ip = headers["x-forwarded-for"][0]
-    end
-    if client_ip == "" then
-        client_ip = txn.f:src()
-    end
-    return client_ip
-end
-
-function get_header_field(headers, field)
-    local field_value = ""
-    if headers and headers[field] and headers[field][0] then
-        field_value = headers[field][0]
-    end
-    if string.len(field_value) == 0 then
-        field_value = "N/A"
-    end
-    return field_value
-end
-
 
 function parse_url_query_string_into_params_table(query_string)
     local result = {}
@@ -246,140 +127,40 @@ local function check_violation(epoch, user, method_or_op, txn, tag)
     return violater
 end
 
--- this is the entry point of http request
--- first send the request to aggregator
--- then check of if we should throttle
-core.register_fetches("req_eval", function(txn)
-    local headers = txn.http:req_get_headers()
-    local query_params = get_decoded_query_params(txn.f:query())
-    local access_key = get_access_key(headers, query_params)
-    txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), access_key)
-    local op_class = classify_request_class(txn)
-    txn:set_var("txn.op_class", op_class)
+function weir_should_block_request(txn, request_key, op_class)
+    --[[
+    Check if Weir thinks an incoming request should be blocked.
+    This should be called early on in request processing. In particular
+    it should be called *before* the activate-weir action in config.
 
-    if txn.f:path() == "/swift/healthcheck" then
-        -- When the request is to the healthcheck endpoint then we always want to pass it through.
-        -- We also specifically *don't* want to log the request for QoS tracking because that would impact
-        -- other unauthenticated requests (especially if we have a large haproxy cluster with many healthchecks)
-        return 0
-    end
+    Returns 1 if the request should be blocked, otherwise 0.
+
+    Arguments:
+    * txn: The transaction to consider for blocking.
+    * request_key: The key that identifies this request's QoS policy.
+                   In S3 for example, this could be the user's access key or the bucket name.
+    * op_class: The type of protocol-specific operation represented by this request.
+                This is used in combination with operation-specific limits to allow
+                enforcing lower limits on certain operations (e.g if they're expensive).
+                In S3 for example, this might be bulk deletes or bucket listings.
+                If empty string ("") is passed, operation-specific checks are skipped.
+                Pass an empty string ("") if you do not need operation-specific limits.
+    ]]
+    txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), request_key)
 
     local epoch = os.time()
-    local violater = check_violation(epoch, access_key, txn.f:method(), txn)
+    local violater = check_violation(epoch, request_key, txn.f:method(), txn)
     if violater ~= 0 then
         return violater
     end
     -- Check for classified ops violation
-    if op_class ~= QOS.UNCLASSIFIED_OP then
-        violater = check_violation(epoch, access_key, op_class, txn, "ops")
+    if op_class ~= "" then
+        violater = check_violation(epoch, request_key, op_class, txn, "ops")
         if violater ~= 0 then
             return violater
         end
     end
-end)
-
--- this method is used to get the user access key for haproxy logging
-core.register_fetches("get_user_access_key", function(txn)
-    local headers = txn.http:req_get_headers()
-    local query_params = get_decoded_query_params(txn.f:query())
-    local access_key = get_access_key(headers, query_params)
-    return access_key
-end)
-
-core.register_fetches("get_s3_op_direction", function(txn)
-    local method = txn.f:method()
-    if method == "PUT" or method == "POST" then
-        return "up"
-    else
-        return "dwn"
-    end
-end)
-
-function classify_request_class(txn)
-    local path = txn.f:path() or ""
-    local query = txn.f:query() or ""
-    local method = txn.f:method() or ""
-    local uri = path
-    if query ~= "" then
-        uri = uri .. "?" .. query
-    end
-
-    local op = QOS.UNCLASSIFIED_OP
-
-    -- Known control-plane query parameters
-    local control_plane_params = {
-        acl=true, policy=true, tagging=true, versioning=true, location=true,
-        publicAccessBlock=true, cors=true, encryption=true, lifecycle=true,
-        website=true, notification=true, logging=true, replication=true,
-        metrics=true, inventory=true, ["object-lock"]=true, analytics=true,
-        ownershipControls=true, requestPayment=true, accelerate=true,
-        ["intelligent-tiering"]=true, torrent=true, metadata=true,
-        metadataTable=true
-    }
-
-    -- Parse query keys into a set
-    local query_keys = {}
-    for k in query:gmatch("([^&=?]+)") do
-        query_keys[k] = true
-    end
-
-    -- Detect if any known control-plane key is present
-    local is_control_plane = false
-    for k in pairs(query_keys) do
-        if control_plane_params[k] then
-            is_control_plane = true
-            break
-        end
-    end
-
-    local trimmed = path:gsub("^/", "")
-
-    if method == "GET" then
-        if query_keys["list-type"] then
-            op = "LISTOBJECTSV2"
-        elseif query_keys["uploads"] then
-            op = "LISTMULTIPARTUPLOADS"
-        elseif query_keys["versions"] then
-            op = "LISTOBJECTVERSIONS"
-        elseif not is_control_plane and uri == "/" then
-            op = "LISTBUCKETS"
-        elseif not is_control_plane and query ~= "" and not trimmed:find("/") then
-            op = "LISTOBJECTS"
-        end
-
-    elseif method == "POST" then
-        if query_keys["delete"] then
-            op = "DELETEOBJECTS"
-        end
-
-    elseif method == "DELETE" then
-        if not query_keys["uploadId"] and not is_control_plane and trimmed:find("/") then
-            op = "DELETEOBJECT"
-        end
-
-    elseif method == "PUT" then
-        if not is_control_plane and not trimmed:find("/") and query == "" then
-            op = "CREATEBUCKET"
-        end
-    end
-
-    -- Final allowlist control
-    local raw_op = op
-    if not QOS.CONFIGURED_OPS[op] then
-        op = QOS.UNCLASSIFIED_OP
-    end
-
-    core.Debug(string.format(
-        "[classify_request_class] method=%s uri=%s classified=%s",
-        method, uri, raw_op, op
-    ))
-
-    return op
 end
-
-
-
-
 
 -- process violates
 function update_violates(line, curr_time)
@@ -593,22 +374,5 @@ end
 -- entry point to get policies.
 -- we also provide a admin port here
 core.register_service("ingest_policies", "tcp", ingest_policies)
-
-function log_request(reason, txn)
-    local headers = txn.http:req_get_headers()
-    local access_key = get_access_key(headers)
-    local client_ip = get_client_ip(headers, txn)
-    core.Info(reason.." - "..txn.f:src()..":"..txn.f:src_port().."~|~"..client_ip.."~|~"..access_key.."~|~"..txn.f:method())
-end
-
-core.register_action("delay_request", { "http-req" }, function(txn)
-    log_request("Delayed (Throughput Violation)", txn)
-    core.msleep(100)
-end)
-
-core.register_fetches("log_denied_req", function(txn)
-    log_request("Denied (Rate Limit Violation)", txn)
-    return 1
-end)
 
 end
