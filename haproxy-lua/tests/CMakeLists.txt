@@ -15,7 +15,9 @@ if(WEIR_FETCH_DEPENDENCIES)
 endif()
 
 configure_file(${haproxy_lua_tests_SOURCE_DIR}/src/haproxy_lua.lua ${CMAKE_CURRENT_BINARY_DIR} COPYONLY)
+configure_file(${haproxy_lua_tests_SOURCE_DIR}/src/weir-s3.lua ${CMAKE_CURRENT_BINARY_DIR} COPYONLY)
 configure_file(${haproxy_lua_tests_SOURCE_DIR}/tests/haproxy_lua_tests.lua ${CMAKE_CURRENT_BINARY_DIR} COPYONLY)
+configure_file(${haproxy_lua_tests_SOURCE_DIR}/tests/weir-s3-tests.lua ${CMAKE_CURRENT_BINARY_DIR} COPYONLY)
 
 #
 # add unit test target
@@ -67,9 +69,15 @@ elseif(lua_MAJOR_VERSION EQUAL 5 AND lua_MINOR_VERSION LESS 3)
 endif()
 
 add_test(
-  NAME LuaTest
-  COMMAND ${lua_EXECUTABLE} haproxy_lua_tests.lua
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    NAME HAProxy-lua-weir-core
+    COMMAND ${lua_EXECUTABLE} haproxy_lua_tests.lua
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_test(
+    NAME HAProxy-lua-weir-s3
+    COMMAND ${lua_EXECUTABLE} weir-s3-tests.lua
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # If dependencies are not installed in common/expected locations then you need to specify a custom LUA_PATH.

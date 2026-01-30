@@ -108,15 +108,6 @@ test_get_access_key_from_query_string = {}
         lu.assertEquals(get_access_key(headers, get_decoded_query_params("AWSACCESSKEYID=AKIAIOSFODNN7EXAMPLE&")), "AKIAIOSFODNN7EXAMPLE")
     end
 
-test_get_bucket_name = {}
-    function test_get_bucket_name:tests()
-        lu.assertEquals(get_bucket_name("/", "bucket1.s3.dev.com"), "bucket1")
-        lu.assertEquals(get_bucket_name("/", "bucket1.S3.dev.com"), "bucket1")
-        lu.assertEquals(get_bucket_name("/bucket1", "www.google.com"), "bucket1")
-        lu.assertEquals(get_bucket_name("/bucket1/obj1", "s3.dev.com"), "bucket1")
-        lu.assertEquals(get_bucket_name("/bucket1", "s3.dev.com"), "bucket1")
-    end
-
 test_is_reqs_violater = {}
     reqs_map['access_key1'] = 123456
     function test_is_reqs_violater:tests()
