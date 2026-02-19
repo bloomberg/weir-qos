@@ -16,18 +16,19 @@ from policy_generator import (
     DemandMap,
     Direction,
     HaproxyServerMap,
+    LimitConfig,
     Policies,
     PolicyGenerator,
 )
 from weir.models.user_metrics import UsageValue, UserLevelVerbUsage
 
-SAMPLE_KEY_LIMITS: dict[str, dict[str, AnyType]] = {
-    "user_to_qos_id": {
+SAMPLE_KEY_LIMITS: LimitConfig = LimitConfig(
+    user_to_qos_id={
         "MYACCESSKEY1": "SILVER",
         "MYACCESSKEY2": "GOLD",
         "MYACCESSKEY3": "PLATINUM",
     },
-    "qos": {
+    qos={
         "DEFAULT": {
             "user_DELETE": 100,
             "user_GET": 100,
@@ -67,7 +68,7 @@ SAMPLE_KEY_LIMITS: dict[str, dict[str, AnyType]] = {
             "user_conns": 30,
         },
     },
-}
+)
 
 
 SPECIAL_USER = "common"
@@ -111,29 +112,29 @@ class TestPolicyGenerator(unittest.TestCase):
         self.stubbed_polygen.logger = logging.getLogger("TestPolicyGenerator")
 
     def _pick_a_known_acckey(self) -> str:
-        return list(SAMPLE_KEY_LIMITS["user_to_qos_id"].keys())[0]
+        return list(SAMPLE_KEY_LIMITS.user_to_qos_id.keys())[0]
 
     def _pick_an_unknown_acckey(self) -> str:
         acckey = "an_unrecognised_key"
-        self.assertNotIn(acckey, SAMPLE_KEY_LIMITS["user_to_qos_id"].keys())
+        self.assertNotIn(acckey, SAMPLE_KEY_LIMITS.user_to_qos_id.keys())
         self.assertNotIn(acckey, SAMPLE_SPECIAL_USER_LIMITS["user_to_qos_id"].keys())
         return acckey
 
     def _pick_a_supported_category(self, bnd: bool = False) -> str:
         pattern = VERB_LIMITING_BANDWIDTH_CATEGORY_PATTERN if bnd else ""
         categories = [
-            c for c in SAMPLE_KEY_LIMITS["qos"]["DEFAULT"].keys() if pattern in c
+            c for c in SAMPLE_KEY_LIMITS.qos["DEFAULT"].keys() if pattern in c
         ]
         return categories[0]
 
     def _pick_an_unsupported_category(self) -> str:
         cat = "user_OPTIONS"
-        self.assertNotIn(cat, SAMPLE_KEY_LIMITS["qos"]["DEFAULT"].keys())
+        self.assertNotIn(cat, SAMPLE_KEY_LIMITS.qos["DEFAULT"].keys())
         return cat
 
     def test__is_limit_reached_verb_type__all_limits_missing_rate(self) -> None:
         """When no limit info is found in the configurations, use the hard-coded limit"""
-        self.stubbed_polygen.key_limits = {}
+        self.stubbed_polygen.key_limits = LimitConfig({}, {})
         user_key = self._pick_a_known_acckey()
 
         cat = self._pick_a_supported_category()
@@ -150,7 +151,7 @@ class TestPolicyGenerator(unittest.TestCase):
 
     def test__is_limit_reached_verb_type__all_limits_missing_bnd(self) -> None:
         """When no limit info is found in the configurations, use the hard-coded limit"""
-        self.stubbed_polygen.key_limits = {}
+        self.stubbed_polygen.key_limits = LimitConfig({}, {})
 
         user_key = self._pick_a_known_acckey()
         cat = self._pick_a_supported_category(bnd=True)
@@ -169,7 +170,7 @@ class TestPolicyGenerator(unittest.TestCase):
         """When no limit info is found in the configurations, use the hard-coded limit.
         Special users file is not meant to provide DEFAULT limits.
         """
-        self.stubbed_polygen.key_limits = {}
+        self.stubbed_polygen.key_limits = LimitConfig({}, {})
 
         user_key = self._pick_a_known_acckey()
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
@@ -187,7 +188,7 @@ class TestPolicyGenerator(unittest.TestCase):
         """When no limit info is found in the configurations, use the hard-coded limit.
         Special users file is not meant to provide DEFAULT limits.
         """
-        self.stubbed_polygen.key_limits = {}
+        self.stubbed_polygen.key_limits = LimitConfig({}, {})
 
         user_key = self._pick_a_known_acckey()
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
@@ -210,7 +211,7 @@ class TestPolicyGenerator(unittest.TestCase):
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             cat,
             self._pick_an_unknown_acckey(),
-            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat]
+            SAMPLE_KEY_LIMITS.qos["DEFAULT"][cat]
             * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO,
         )
         self.assertTrue(limit_reached)
@@ -224,7 +225,7 @@ class TestPolicyGenerator(unittest.TestCase):
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             cat,
             self._pick_an_unknown_acckey(),
-            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat]
+            SAMPLE_KEY_LIMITS.qos["DEFAULT"][cat]
             * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO
             * MB,
         )
@@ -241,7 +242,7 @@ class TestPolicyGenerator(unittest.TestCase):
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             cat,
             SPECIAL_USER,
-            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat]
+            SAMPLE_KEY_LIMITS.qos["DEFAULT"][cat]
             * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO,
         )
         self.assertTrue(limit_reached)
@@ -338,8 +339,8 @@ class TestPolicyGenerator(unittest.TestCase):
             "user_conns",
             "MYACCESSKEY1",
         )
-        self.assertTrue("user_conns" not in SAMPLE_KEY_LIMITS["qos"]["SILVER"])
-        self.assertEqual(limit, SAMPLE_KEY_LIMITS["qos"]["DEFAULT"]["user_conns"])
+        self.assertTrue("user_conns" not in SAMPLE_KEY_LIMITS.qos["SILVER"])
+        self.assertEqual(limit, SAMPLE_KEY_LIMITS.qos["DEFAULT"]["user_conns"])
         self.assertEqual(limit, 10)
 
     def test__get_limit__returns_user_conn_limit_if_user_has_one_defined(
@@ -350,8 +351,8 @@ class TestPolicyGenerator(unittest.TestCase):
             "user_conns",
             "MYACCESSKEY3",
         )
-        self.assertTrue("user_conns" in SAMPLE_KEY_LIMITS["qos"]["PLATINUM"])
-        self.assertEqual(limit, SAMPLE_KEY_LIMITS["qos"]["PLATINUM"]["user_conns"])
+        self.assertTrue("user_conns" in SAMPLE_KEY_LIMITS.qos["PLATINUM"])
+        self.assertEqual(limit, SAMPLE_KEY_LIMITS.qos["PLATINUM"]["user_conns"])
         self.assertEqual(limit, 30)
 
     def test__check_all_conn_key_violations__adds_blocks(self) -> None:
@@ -480,9 +481,9 @@ class TestPolicyGenerator(unittest.TestCase):
 
         # Should be a 25-75% split between instances
         user1_total_limit = (
-            SAMPLE_KEY_LIMITS["qos"][
-                SAMPLE_KEY_LIMITS["user_to_qos_id"]["MYACCESSKEY1"]
-            ]["user_bnd_dwn"]
+            SAMPLE_KEY_LIMITS.qos[SAMPLE_KEY_LIMITS.user_to_qos_id["MYACCESSKEY1"]][
+                "user_bnd_dwn"
+            ]
             * MB
         )
         self.assertEqual(
@@ -515,15 +516,15 @@ class TestPolicyGenerator(unittest.TestCase):
 
         # Should be a 25-75% split between instances
         total_down_limit = (
-            SAMPLE_KEY_LIMITS["qos"][
-                SAMPLE_KEY_LIMITS["user_to_qos_id"]["MYACCESSKEY1"]
-            ]["user_bnd_dwn"]
+            SAMPLE_KEY_LIMITS.qos[SAMPLE_KEY_LIMITS.user_to_qos_id["MYACCESSKEY1"]][
+                "user_bnd_dwn"
+            ]
             * MB
         )
         total_up_limit = (
-            SAMPLE_KEY_LIMITS["qos"][
-                SAMPLE_KEY_LIMITS["user_to_qos_id"]["MYACCESSKEY1"]
-            ]["user_bnd_up"]
+            SAMPLE_KEY_LIMITS.qos[SAMPLE_KEY_LIMITS.user_to_qos_id["MYACCESSKEY1"]][
+                "user_bnd_up"
+            ]
             * MB
         )
         self.assertEqual(
@@ -559,15 +560,15 @@ class TestPolicyGenerator(unittest.TestCase):
 
         # Should be a 25-75% split for user 1, who should be unaffected by user 2
         user1_total_limit = (
-            SAMPLE_KEY_LIMITS["qos"][
-                SAMPLE_KEY_LIMITS["user_to_qos_id"]["MYACCESSKEY1"]
-            ]["user_bnd_dwn"]
+            SAMPLE_KEY_LIMITS.qos[SAMPLE_KEY_LIMITS.user_to_qos_id["MYACCESSKEY1"]][
+                "user_bnd_dwn"
+            ]
             * MB
         )
         user2_total_limit = (
-            SAMPLE_KEY_LIMITS["qos"][
-                SAMPLE_KEY_LIMITS["user_to_qos_id"]["MYACCESSKEY2"]
-            ]["user_bnd_dwn"]
+            SAMPLE_KEY_LIMITS.qos[SAMPLE_KEY_LIMITS.user_to_qos_id["MYACCESSKEY2"]][
+                "user_bnd_dwn"
+            ]
             * MB
         )
         self.assertEqual(
