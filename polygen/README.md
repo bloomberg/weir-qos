@@ -12,11 +12,11 @@ For example:
 ```
 {
     "user_to_qos_id": {
-        "user1key901234567890": "default",
-        "common": "default"
+        "user1key901234567890": "DEFAULT",
+        "common": "DEFAULT"
     },
     "qos": {
-        "default": {
+        "DEFAULT": {
             "user_DELETE": 2,
             "user_GET": 2,
             "user_HEAD": 2,
@@ -30,10 +30,11 @@ For example:
 }
 ```
 
-In the above `user1key901234567890` is the identifier of a user and `default` is the name of a limit tier, with the value of each limit to apply.
+In the above `user1key901234567890` is the identifier of a user and `DEFAULT` is the name of a limit tier, with the value of each limit to apply.
 
 Note that there is another user identifier `common`.
-This is a special value recognised by the system to represent any request for which no identifier can be determined (e.g if the relevant headers were not provided in a request).
+This is a special value used by the S3 implementation to represent any request for which no identifier can be determined (e.g if the relevant headers were not provided in a request).
+The QoS ID `DEFAULT` is also special: across all implementations, any user that does not have a policy explicitly defined (IE does not exist in the `user_to_qos_id` map) will fall back to using the values defined in the `DEFAULT` policy.
 
 # Live reload
 The "dynamic file" with regularly-changing user info can also be live-reloaded so pull in changes without restarting polygen.
