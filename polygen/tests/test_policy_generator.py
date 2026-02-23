@@ -70,25 +70,8 @@ SAMPLE_KEY_LIMITS: dict[str, dict[str, AnyType]] = {
 }
 
 
-SPECIAL_USER = "common"
-SAMPLE_SPECIAL_USER_LIMITS: dict[str, dict[str, AnyType]] = {
-    "user_to_qos_id": {"common": "COMMON_QOS"},
-    "qos": {
-        "COMMON_QOS": {
-            "user_DELETE": 75,
-            "user_GET": 75,
-            "user_HEAD": 75,
-            "user_POST": 75,
-            "user_PUT": 75,
-            "user_bnd_up": 75,
-            "user_bnd_dwn": 75,
-        }
-    },
-}
-
-
 # Some constants used in testcases
-SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO: float = 10.0
+EXAMPLE_DIFF_RATIO: float = 10.0
 A_VERY_HIGH_VALUE: int = 100000
 
 
@@ -116,7 +99,6 @@ class TestPolicyGenerator(unittest.TestCase):
     def _pick_an_unknown_acckey(self) -> str:
         acckey = "an_unrecognised_key"
         self.assertNotIn(acckey, SAMPLE_KEY_LIMITS["user_to_qos_id"].keys())
-        self.assertNotIn(acckey, SAMPLE_SPECIAL_USER_LIMITS["user_to_qos_id"].keys())
         return acckey
 
     def _pick_a_supported_category(self, bnd: bool = False) -> str:
@@ -166,15 +148,13 @@ class TestPolicyGenerator(unittest.TestCase):
         )
 
     def test__is_limit_reached_verb_type__key_limits_missing_rate(self) -> None:
-        """When no limit info is found in the configurations, use the hard-coded limit.
-        Special users file is not meant to provide DEFAULT limits.
-        """
+        """When no limit info is found in the configurations, use the hard-coded limit."""
         self.stubbed_polygen.key_limits = {}
 
         user_key = self._pick_a_known_acckey()
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             self._pick_a_supported_category(),
-            user_key,  # not a special user
+            user_key,
             A_VERY_HIGH_VALUE,
         )
         self.assertTrue(limit_reached)
@@ -184,15 +164,13 @@ class TestPolicyGenerator(unittest.TestCase):
         )
 
     def test__is_limit_reached_verb_type__key_limits_missing_bandwidth(self) -> None:
-        """When no limit info is found in the configurations, use the hard-coded limit.
-        Special users file is not meant to provide DEFAULT limits.
-        """
+        """When no limit info is found in the configurations, use the hard-coded limit."""
         self.stubbed_polygen.key_limits = {}
 
         user_key = self._pick_a_known_acckey()
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             self._pick_a_supported_category(bnd=True),
-            user_key,  # not a special user
+            user_key,
             A_VERY_HIGH_VALUE * MB,
         )
         print(f"{diff_ratio}")
@@ -210,11 +188,10 @@ class TestPolicyGenerator(unittest.TestCase):
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             cat,
             self._pick_an_unknown_acckey(),
-            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat]
-            * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO,
+            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat] * EXAMPLE_DIFF_RATIO,
         )
         self.assertTrue(limit_reached)
-        self.assertEqual(diff_ratio, SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO)
+        self.assertEqual(diff_ratio, EXAMPLE_DIFF_RATIO)
 
     def test__is_limit_reached_verb_type__unrecognised_key_bnd(self) -> None:
         """When a key is unknown, we apply the DEFAULT limits"""
@@ -224,28 +201,10 @@ class TestPolicyGenerator(unittest.TestCase):
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             cat,
             self._pick_an_unknown_acckey(),
-            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat]
-            * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO
-            * MB,
+            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat] * EXAMPLE_DIFF_RATIO * MB,
         )
         self.assertTrue(limit_reached)
-        self.assertEqual(diff_ratio, SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO)
-
-    def test__is_limit_reached_verb_type__special_user_but_custom_limits_missing(
-        self,
-    ) -> None:
-        """If special user limits are missing, special user is treated as unrecognised key."""
-        self.stubbed_polygen.key_limits = SAMPLE_KEY_LIMITS
-
-        cat = self._pick_a_supported_category()
-        limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
-            cat,
-            SPECIAL_USER,
-            SAMPLE_KEY_LIMITS["qos"]["DEFAULT"][cat]
-            * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO,
-        )
-        self.assertTrue(limit_reached)
-        self.assertEqual(diff_ratio, SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO)
+        self.assertEqual(diff_ratio, EXAMPLE_DIFF_RATIO)
 
     def test__is_limit_reached_verb_type__unrecognised_category(self) -> None:
         """When a category is unknown, we apply the hard-coded limit"""
@@ -253,30 +212,12 @@ class TestPolicyGenerator(unittest.TestCase):
 
         cat = self._pick_an_unsupported_category()
         user_key = self._pick_a_known_acckey()
-        value = (
-            DEFAULT_VERB_RATE_LIMIT_IF_QOS_IS_NOT_CONFIGURED
-            * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO
-        )
+        value = DEFAULT_VERB_RATE_LIMIT_IF_QOS_IS_NOT_CONFIGURED * EXAMPLE_DIFF_RATIO
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             cat, user_key, value
         )
         self.assertTrue(limit_reached)
-        self.assertEqual(diff_ratio, SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO)
-
-    def test__is_limit_reached_verb_type__unrecognised_category_with_special_user(
-        self,
-    ) -> None:
-        """When a category is unknown, we apply the hard-coded limits"""
-        self.stubbed_polygen.key_limits = SAMPLE_KEY_LIMITS
-
-        limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
-            self._pick_an_unsupported_category(),
-            SPECIAL_USER,
-            DEFAULT_VERB_RATE_LIMIT_IF_QOS_IS_NOT_CONFIGURED
-            * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO,
-        )
-        self.assertTrue(limit_reached)
-        self.assertEqual(diff_ratio, SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO)
+        self.assertEqual(diff_ratio, EXAMPLE_DIFF_RATIO)
 
     def test__is_limit_reached_verb_type__unrecognised_category_with_unknown_user(
         self,
@@ -287,11 +228,10 @@ class TestPolicyGenerator(unittest.TestCase):
         limit_reached, diff_ratio = self.stubbed_polygen._is_limit_reached_verb_type(
             self._pick_an_unsupported_category(),
             self._pick_an_unknown_acckey(),
-            DEFAULT_VERB_RATE_LIMIT_IF_QOS_IS_NOT_CONFIGURED
-            * SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO,
+            DEFAULT_VERB_RATE_LIMIT_IF_QOS_IS_NOT_CONFIGURED * EXAMPLE_DIFF_RATIO,
         )
         self.assertTrue(limit_reached)
-        self.assertEqual(diff_ratio, SPECIAL_USER_TESTS_EXPECTED_DIFF_RATIO)
+        self.assertEqual(diff_ratio, EXAMPLE_DIFF_RATIO)
 
     def _check_result(
         self,
