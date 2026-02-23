@@ -8,8 +8,6 @@ from weir.models.user_metrics import (
 
 
 class MetricService:
-    ACCESSKEY_PLACEHOLDER = "common"
-
     @staticmethod
     def create_user_level_metric(key: str, current_epoch: int) -> UserLevelUsage:
         items = key.split("_")
@@ -17,10 +15,7 @@ class MetricService:
             raise Exception(f"invalid key {key} retrieved from redis-qos")
 
         def _validate_access_key(usage: UserLevelUsage) -> None:
-            if (
-                usage.access_key != MetricService.ACCESSKEY_PLACEHOLDER
-                and not usage.access_key.isalnum()
-            ):
+            if not usage.access_key.isalnum():
                 raise Exception(
                     f"access_key={usage.access_key} has invalid format for key {usage.key}"
                 )

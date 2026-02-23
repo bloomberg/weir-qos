@@ -1,11 +1,11 @@
 {
     "user_to_qos_id": {
-        "user1key901234567890": "COMMON_QOS",
-        "user2key901234567890": "COMMON_QOS",
-        "common": "COMMON_QOS"
+        "user1key901234567890": "DEFAULT",
+        "user2key901234567890": "DEFAULT",
+        "common": "DEFAULT"
     },
     "qos": {
-        "COMMON_QOS": {
+        "DEFAULT": {
             "user_DELETE": 2,
             "user_GET": 2,
             "user_HEAD": 2,
