@@ -211,19 +211,19 @@ function TestIfStsCredentialReq:test_returns_1_when_security_token_header_presen
     local headers = {
         ["x-amz-security-token"] = { [0] = "some-sts-token-value" }
     }
-    luaunit.assertEquals(if_sts_credential_req(headers), 1)
+    lu.assertEquals(if_sts_credential_req(headers), 1)
 end
 
 function TestIfStsCredentialReq:test_returns_0_when_no_security_token_header()
     local headers = {
         ["authorization"] = { [0] = "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request" }
     }
-    luaunit.assertEquals(if_sts_credential_req(headers), 0)
+    lu.assertEquals(if_sts_credential_req(headers), 0)
 end
 
 function TestIfStsCredentialReq:test_returns_0_when_empty_headers()
     local headers = {}
-    luaunit.assertEquals(if_sts_credential_req(headers), 0)
+    lu.assertEquals(if_sts_credential_req(headers), 0)
 end
 
 -- Tests for sts_qos_populate_txn_context
@@ -272,7 +272,7 @@ function TestStsQosPopulateTxnContext:test_sets_if_body_parse_for_assume_role()
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertEquals(txn:get_var("txn.if_body_parse"), "yes")
+    lu.assertEquals(txn:get_var("txn.if_body_parse"), "yes")
 end
 
 function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_for_non_assume_role()
@@ -285,7 +285,7 @@ function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_for_non_as
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertNil(txn:get_var("txn.if_body_parse"))
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
 end
 
 function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_no_content_length()
@@ -298,7 +298,7 @@ function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_no_co
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertNil(txn:get_var("txn.if_body_parse"))
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
 end
 
 function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_content_length_zero()
@@ -311,7 +311,7 @@ function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_conte
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertNil(txn:get_var("txn.if_body_parse"))
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
 end
 
 function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_path_is_not_root()
@@ -324,7 +324,7 @@ function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_path_
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertNil(txn:get_var("txn.if_body_parse"))
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
 end
 
 function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_body_param_nil()
@@ -337,7 +337,7 @@ function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_body_
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertNil(txn:get_var("txn.if_body_parse"))
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
 end
 
 function TestStsQosPopulateTxnContext:test_logs_sts_token_when_present()
@@ -356,8 +356,8 @@ function TestStsQosPopulateTxnContext:test_logs_sts_token_when_present()
 
     sts_qos_populate_txn_context(txn)
 
-    luaunit.assertEquals(#logged_messages, 1)
-    luaunit.assertStrContains(logged_messages[1], "accesskeyid-ststoken")
+    lu.assertEquals(#logged_messages, 1)
+    lu.assertStrContains(logged_messages[1], "accesskeyid-ststoken")
 
     -- Restore original core.Info
     core.Info = function() return nil end
