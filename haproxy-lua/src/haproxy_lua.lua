@@ -376,3 +376,57 @@ end
 core.register_service("ingest_policies", "tcp", ingest_policies)
 
 end
+
+-- STS QoS changes start here
+function if_sts_credential_req(headers)
+    local sec_header=headers['x-amz-security-token']
+    if  sec_header and sec_header ~= nil then
+        local sts_header=headers['x-amz-security-token'][0]
+        if sts_header  and sts_header ~= nil then
+          return 1
+        else
+          return 0
+        end
+    else
+        return 0
+    end
+end
+
+
+function sts_qos_populate_txn_context(txn)
+    -- here we are evaluating to see of this is an sts assume role request and if yes, we attach an 
+    -- "if_body_parse" property in the http req txn context. This will be available in the http resp txn context and we can 
+    -- parse the bodies of those transactions for getting useful info. e.g. StsToken-Role mapping
+
+    local content_length=tonumber(txn.sf:req_fhdr("Content-Length"))  
+    -- Transactions which need body parsing - This is performance degrading , so enable it only for a small subset of transactions
+    -- The transactions which have this enabled should be rated limited ideally   
+    local body_parse_txns = {["AssumeRole"] = true}
+
+    -- this filters out many of the data plane operations
+    if content_length and type(content_length) == "number" and content_length > 0 then
+        -- Note that this nested to filter out some of the operations that happens in haproxy layer
+        local url_path=txn.f:path()
+        if url_path ~= nil and url_path == "/" then  
+            local req_headers_temp = txn.http:req_get_headers()
+            local req_body_param=(txn.f:req_body_param() == nil) and "" or txn.f:req_body_param() 
+            -- set flag in the txn context for the request if there is a content length and url path is and 
+            -- if the body param is in the list of body parse txns. 
+            if body_parse_txns[req_body_param] then 
+                -- set_var sets it in the txn scope
+                txn:set_var("txn.if_body_parse", "yes") 
+            end
+        end
+    end
+    -- for printing the STS tokens when a client uses them
+    local req_headers = txn.http:req_get_headers()
+    if if_sts_credential_req(req_headers) == 1 then
+        -- Commenting out temporarily to prevent possible cred leaks 
+        --core.Info("accesskeyid-ststoken~|~"..req_headers['authorization'][0].."~|~"..req_headers['x-amz-security-token'][0])
+        core.Info("accesskeyid-ststoken~|~accesskeyststoken to follow")
+    end
+end
+
+core.register_action("sts_qos_populate_txn_context", { "http-req" }, sts_qos_populate_txn_context)
+
+-- STS QoS changes end here

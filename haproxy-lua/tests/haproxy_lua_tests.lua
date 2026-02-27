@@ -201,4 +201,166 @@ test_ingest_policies_gracefully_recovers_from_unexpected_end_of_limit_share_mess
         {12346, "key2", "fff3", "dwn", 65},
     })
 end
+
+-- STS QoS tests starts here 
+-- Tests for if_sts_credential_req
+
+TestIfStsCredentialReq = {}
+
+function TestIfStsCredentialReq:test_returns_1_when_security_token_header_present()
+    local headers = {
+        ["x-amz-security-token"] = { [0] = "some-sts-token-value" }
+    }
+    lu.assertEquals(if_sts_credential_req(headers), 1)
+end
+
+function TestIfStsCredentialReq:test_returns_0_when_no_security_token_header()
+    local headers = {
+        ["authorization"] = { [0] = "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request" }
+    }
+    lu.assertEquals(if_sts_credential_req(headers), 0)
+end
+
+function TestIfStsCredentialReq:test_returns_0_when_empty_headers()
+    local headers = {}
+    lu.assertEquals(if_sts_credential_req(headers), 0)
+end
+
+-- Tests for sts_qos_populate_txn_context
+
+TestStsQosPopulateTxnContext = {}
+
+-- Create a mock table to run unit tests for sts_qos_populate_txn_context since it relies on the txn object provided by HAProxy, which is not available in a standalone Lua environment. 
+-- This mock will simulate the necessary methods and properties of the txn object for testing purposes.
+local function make_mock_txn(opts)
+    local vars = {}
+    return {
+        http = {
+            req_get_headers = function()
+                return opts.headers or {}
+            end,
+        },
+        sf = {
+            req_fhdr = function(self, name)
+                if name == "Content-Length" then
+                    return opts.content_length
+                end
+                return nil
+            end,
+        },
+        f = {
+            path = function() return opts.path or "/" end,
+            req_body_param = function() return opts.req_body_param end,
+        },
+        set_var = function(self, name, value)
+            vars[name] = value
+        end,
+        get_var = function(self, name)
+            return vars[name]
+        end,
+        _vars = vars,
+    }
+end
+
+function TestStsQosPopulateTxnContext:test_sets_if_body_parse_for_assume_role()
+    local txn = make_mock_txn({
+        content_length = "128",
+        path = "/",
+        req_body_param = "AssumeRole",
+        headers = {},
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertEquals(txn:get_var("txn.if_body_parse"), "yes")
+end
+
+function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_for_non_assume_role()
+    local txn = make_mock_txn({
+        content_length = "128",
+        path = "/",
+        req_body_param = "NotAssumeRole",
+        headers = {},
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
+end
+
+function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_no_content_length()
+    local txn = make_mock_txn({
+        content_length = nil,
+        path = "/",
+        req_body_param = "AssumeRole",
+        headers = {},
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
+end
+
+function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_content_length_zero()
+    local txn = make_mock_txn({
+        content_length = "0",
+        path = "/",
+        req_body_param = "AssumeRole",
+        headers = {},
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
+end
+
+function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_path_is_not_root()
+    local txn = make_mock_txn({
+        content_length = "128",
+        path = "/some/other/path",
+        req_body_param = "AssumeRole",
+        headers = {},
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
+end
+
+function TestStsQosPopulateTxnContext:test_does_not_set_if_body_parse_when_body_param_nil()
+    local txn = make_mock_txn({
+        content_length = "128",
+        path = "/",
+        req_body_param = nil,
+        headers = {},
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertNil(txn:get_var("txn.if_body_parse"))
+end
+
+function TestStsQosPopulateTxnContext:test_logs_sts_token_when_present()
+    local logged_messages = {}
+    core.Info = function(msg) table.insert(logged_messages, msg) end
+
+    local txn = make_mock_txn({
+        content_length = nil,
+        path = "/",
+        req_body_param = nil,
+        headers = {
+            ["x-amz-security-token"] = { [0] = "some-token" },
+            ["authorization"] = { [0] = "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request" },
+        },
+    })
+
+    sts_qos_populate_txn_context(txn)
+
+    lu.assertEquals(#logged_messages, 1)
+    lu.assertStrContains(logged_messages[1], "accesskeyid-ststoken")
+
+    -- Restore original core.Info
+    core.Info = function() return nil end
+end
+-- STS QoS tests ends here 
 os.exit(lu.LuaUnit.run())
