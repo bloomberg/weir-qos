@@ -1,6 +1,7 @@
 -- this is to mock off core class from haproxy lua
 core = {register_fetches = function () return nil end,
         register_service = function() return nil end,
+        register_action = function() return nil end,
         Debug = function(msg) print("DEBUG: "..msg) return nil end,
         Info = function(msg) print("INFO: "..msg) return nil end,
         Warning = function(msg) print("WARN: "..msg) return nil end,
