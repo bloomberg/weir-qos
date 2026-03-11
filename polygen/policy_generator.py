@@ -18,6 +18,7 @@ import time
 import warnings
 from collections.abc import Callable
 from concurrent import futures
+from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha1
 from typing import Any, Iterable, NamedTuple
@@ -37,9 +38,7 @@ MB = 1048576  # 1024*1024
 RELOAD_FIFO_NAME = "polygen_reload.fifo"
 RELOAD_LIMITS_REQ = "reload_limits"
 CACHE_LIMIT_FILE_NAME = "cache_limits.json"
-USER_TO_QOS_KEY = "user_to_qos_id"
-QOS_KEY = "qos"
-DEFAULT_QOS_KEY = "DEFAULT"
+DEFAULT_QOS_ID = "common"
 
 REDIS_KEY_TYPE_VERB = "verb"
 REDIS_KEY_TYPE_CONN = "conn"
@@ -76,6 +75,12 @@ class Direction(Enum):
 class DemandKey(NamedTuple):
     user_key: str
     direction: Direction
+
+
+@dataclass
+class LimitConfig:
+    user_to_qos_id: dict[str, str]
+    qos: dict[str, dict[str, float]]
 
 
 # This maps a (user-access-key, transfer-direction) tuple to:
@@ -409,20 +414,18 @@ class PolicyGenerator:
             raise
         return config
 
-    def _load_limits_from_file(
-        self, file_path: str
-    ) -> dict[str, dict[str, str | dict[str, float]]]:
+    def _load_limits_from_file(self, file_path: str) -> LimitConfig:
         self.logger.info(f"Loading limits from file {file_path}")
         if not os.path.isfile(file_path):
             self.logger.error(f"no {file_path} existed, nothing was cached")
-            return {}
+            return LimitConfig({}, {})
         try:
             with open(file_path, "r") as targeted_file:
-                target = json.load(targeted_file)
-                return target
+                config_dict = json.load(targeted_file)
+                return LimitConfig(**config_dict)
         except Exception as e:
             self.logger.exception(f"Failed to load json from {file_path} {e}")
-            return {}
+            return LimitConfig({}, {})
 
     def _get_haproxies_from_config(
         self, config: dict[str, Any]
@@ -492,9 +495,9 @@ class PolicyGenerator:
 
     def _get_limit(self, cat: str, key: str) -> float:
         # Try to get the configured QoS ID for the user
-        qos_id = self.key_limits.get(USER_TO_QOS_KEY, {}).get(key)
+        qos_id = self.key_limits.user_to_qos_id.get(key)
         if qos_id and isinstance(qos_id, str):
-            qos_id_limits = self.key_limits.get(QOS_KEY, {}).get(qos_id, {})
+            qos_id_limits = self.key_limits.qos.get(qos_id, {})
             if isinstance(qos_id_limits, dict):
                 limit = qos_id_limits.get(cat, QOS_VERB_LIMIT_NOT_CONFIGURED)
                 if limit != QOS_VERB_LIMIT_NOT_CONFIGURED:
@@ -505,12 +508,15 @@ class PolicyGenerator:
 
         # Fallback to DEFAULT limits if not found
         self.unknown_users.add(key)
-        qos_id_limits = self.key_limits.get(QOS_KEY, {}).get(DEFAULT_QOS_KEY, {})
+        default_policy_name = self.key_limits.user_to_qos_id.get(
+            DEFAULT_QOS_ID, "DEFAULT"
+        )
+        qos_id_limits = self.key_limits.qos.get(default_policy_name, {})
         if isinstance(qos_id_limits, dict):
             limit = qos_id_limits.get(cat, QOS_VERB_LIMIT_NOT_CONFIGURED)
             if limit != QOS_VERB_LIMIT_NOT_CONFIGURED:
                 self.logger.debug(
-                    f"For {key} {cat}, {limit} is using {DEFAULT_QOS_KEY} configured limit"
+                    f"For {key} {cat}, {limit} is using {DEFAULT_QOS_ID} configured limit"
                 )
                 return limit
 
