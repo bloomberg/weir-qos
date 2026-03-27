@@ -309,7 +309,7 @@ function ingest_policies(applet)
                 inputs = applet:getline()
                 inputs = inputs:gsub("^%s*(.-)%s*$", "%1")                
                 local first_pos = string.find(inputs, "END_OF_POLICIES", 1, true)
-                if first_pos == 1 then
+                if inputs == nil or string.len(inputs) == 0 or first_pos == 1 then
                     break
                 end
                 core.Debug(inputs)
@@ -324,7 +324,7 @@ function ingest_policies(applet)
             local has_error = false
             while has_error == false do
                 inputs = applet:getline()
-                if string.find(inputs, "end_limit_share", 1, true) == 1 then
+                if inputs == nil or string.len(inputs) == 0 or string.find(inputs, "end_limit_share", 1, true) == 1 then
                     break
                 end
 
