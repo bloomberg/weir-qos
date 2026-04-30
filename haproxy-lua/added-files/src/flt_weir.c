@@ -105,7 +105,8 @@ struct weir_lim_state {
     char* limit_key;
     char* request_class;
     char* bandwidth_limit_direction;
-    unsigned int next_allowed_send_tick;
+    unsigned int next_allowed_req_send_tick;
+    unsigned int next_allowed_res_send_tick;
     bool enabled;
     bool headers_processed;
 };
@@ -444,10 +445,12 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
     struct weir_lim_state* st = filter->ctx;
     const DataDirection direction = (msg->chn == &s->req) ? RL_UPLOAD : RL_DOWNLOAD;
     int bytes_to_forward = 0;
+    unsigned int* next_allowed_send_tick =
+        (msg->chn == &s->req) ? &st->next_allowed_req_send_tick : &st->next_allowed_res_send_tick;
 
     WEIR_BUG_ON(!st->enabled); // We should only be registering the data callback when enabling the filter
-    if (!tick_isset(st->next_allowed_send_tick) || tick_is_expired(st->next_allowed_send_tick, now_ms)) {
-        st->next_allowed_send_tick = TICK_ETERNITY;
+    if (!tick_isset(*next_allowed_send_tick) || tick_is_expired(*next_allowed_send_tick, now_ms)) {
+        *next_allowed_send_tick = TICK_ETERNITY;
 
         WEIR_BUG_ON(st->limit == NULL);
         WEIR_BUG_ON(st->bandwidth_limit_direction == NULL);
@@ -462,7 +465,7 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
                 send_log(NULL, LOG_DEBUG, "Throttling %s connection to %s:%u", st->bandwidth_limit_direction,
                          inet_ntoa(st->remote_addr->sin_addr), ntohs(st->remote_addr->sin_port));
 
-                st->next_allowed_send_tick = tick_add(now_ms, MS_TO_TICKS(1));
+                *next_allowed_send_tick = tick_add(now_ms, MS_TO_TICKS(1));
 
                 if (!tick_isset(next_throttle_log_tick) || tick_is_expired(next_throttle_log_tick, now_ms)) {
                     unsigned int new_log_tick = tick_add(now_ms, MS_TO_TICKS(1000));
@@ -496,7 +499,7 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
     // so it should always either be TICK_ETERNITY or some finite value in the future.
     msg->chn->analyse_exp =
         tick_first((tick_is_expired(msg->chn->analyse_exp, now_ms) ? TICK_ETERNITY : msg->chn->analyse_exp),
-                   st->next_allowed_send_tick);
+                   *next_allowed_send_tick);
     BUG_ON(tick_is_expired(msg->chn->analyse_exp, now_ms));
     return bytes_to_forward;
 }
