@@ -446,48 +446,47 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
     int bytes_to_forward = 0;
 
     WEIR_BUG_ON(!st->enabled); // We should only be registering the data callback when enabling the filter
-    if (st->remote_addr == NULL) {
-        bytes_to_forward = len;
-    } else if ((len > 0) &&
-               (!tick_isset(st->next_allowed_send_tick) || tick_is_expired(st->next_allowed_send_tick, now_ms))) {
+    if (!tick_isset(st->next_allowed_send_tick) || tick_is_expired(st->next_allowed_send_tick, now_ms)) {
         st->next_allowed_send_tick = TICK_ETERNITY;
 
         WEIR_BUG_ON(st->limit == NULL);
         WEIR_BUG_ON(st->bandwidth_limit_direction == NULL);
 
-        // do not proceed with transferring data if we are throttling this connection
-        if (rl_speed_throttle(st->remote_addr, direction) == RL_THROTTLE) {
-            unsigned int* next_tick_ptr = (direction == RL_DOWNLOAD) ? &st->limit->download.next_throttle_log_tick
-                                                                     : &st->limit->upload.next_throttle_log_tick;
-            unsigned int next_throttle_log_tick = HA_ATOMIC_LOAD(next_tick_ptr);
+        if (len > 0) {
+            // Do not proceed with transferring data if we are throttling this connection
+            if ((st->remote_addr != NULL) && rl_speed_throttle(st->remote_addr, direction) == RL_THROTTLE) {
+                unsigned int* next_tick_ptr = (direction == RL_DOWNLOAD) ? &st->limit->download.next_throttle_log_tick
+                                                                         : &st->limit->upload.next_throttle_log_tick;
+                unsigned int next_throttle_log_tick = HA_ATOMIC_LOAD(next_tick_ptr);
 
-            send_log(NULL, LOG_DEBUG, "Throttling %s connection to %s:%u", st->bandwidth_limit_direction,
-                     inet_ntoa(st->remote_addr->sin_addr), ntohs(st->remote_addr->sin_port));
+                send_log(NULL, LOG_DEBUG, "Throttling %s connection to %s:%u", st->bandwidth_limit_direction,
+                         inet_ntoa(st->remote_addr->sin_addr), ntohs(st->remote_addr->sin_port));
 
-            st->next_allowed_send_tick = tick_add(now_ms, MS_TO_TICKS(1));
+                st->next_allowed_send_tick = tick_add(now_ms, MS_TO_TICKS(1));
 
-            if (!tick_isset(next_throttle_log_tick) || tick_is_expired(next_throttle_log_tick, now_ms)) {
-                unsigned int new_log_tick = tick_add(now_ms, MS_TO_TICKS(1000));
-                const bool exchange_success = HA_ATOMIC_CAS(next_tick_ptr, &next_throttle_log_tick, new_log_tick);
+                if (!tick_isset(next_throttle_log_tick) || tick_is_expired(next_throttle_log_tick, now_ms)) {
+                    unsigned int new_log_tick = tick_add(now_ms, MS_TO_TICKS(1000));
+                    const bool exchange_success = HA_ATOMIC_CAS(next_tick_ptr, &next_throttle_log_tick, new_log_tick);
 
-                // We only want to log once each second for each user but there could be many different threads
-                // processing requests for this user, so we do an atomic compare-and-swap (CAS) on the tick at which
-                // we're next allowed to swap. If the CAS goes through successfully then we're the thread that changed
-                // it, so we can log. If it failed then another thread got in before us and they would have logged, so
-                // we can just skip that here.
-                if (exchange_success) {
-                    struct timespec t = {};
-                    const int result = clock_gettime(CLOCK_REALTIME, &t);
-                    const long long timestamp_usec = (t.tv_sec * 1000000) + (t.tv_nsec / 1000);
-                    WARN_ON(result != 0);
+                    // We only want to log once each second for each user but there could be many different threads
+                    // processing requests for this user, so we do an atomic compare-and-swap (CAS) on the tick at which
+                    // we're next allowed to swap. If the CAS goes through successfully then we're the thread that
+                    // changed it, so we can log. If it failed then another thread got in before us and they would have
+                    // logged, so we can just skip that here.
+                    if (exchange_success) {
+                        struct timespec t = {};
+                        const int result = clock_gettime(CLOCK_REALTIME, &t);
+                        const long long timestamp_usec = (t.tv_sec * 1000000) + (t.tv_nsec / 1000);
+                        WARN_ON(result != 0);
 
-                    send_log(NULL, LOG_INFO, "weir-throttle~|~%lld~|~user_bnd_%s~|~%s", timestamp_usec,
-                             st->bandwidth_limit_direction, st->limit_key);
+                        send_log(NULL, LOG_INFO, "weir-throttle~|~%lld~|~user_bnd_%s~|~%s", timestamp_usec,
+                                 st->bandwidth_limit_direction, st->limit_key);
+                    }
                 }
+            } else {
+                bytes_to_forward = len;
+                rl_data_transferred(st->remote_addr, direction, len);
             }
-        } else {
-            bytes_to_forward = len;
-            rl_data_transferred(st->remote_addr, direction, len);
         }
     }
 
