@@ -146,7 +146,6 @@ function weir_should_block_request(txn, request_key, op_class)
                 If empty string ("") is passed, operation-specific checks are skipped.
                 Pass an empty string ("") if you do not need operation-specific limits.
     ]]
-    txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), request_key)
 
     local epoch = os.time()
     local violater = check_violation(epoch, request_key, txn.f:method(), txn)
@@ -166,9 +165,7 @@ end
 function update_violates(line, curr_time)
     -- Note: epochs are in usec resolution
     -- Example: 1554318336056480,user_GET,AKIAIOSFODNN7EXAMPLE,AKIAIOSFODNN8EXAMPLE
-    -- Example: 1682013607056577,user_bnd_up,AKIAIOSFODNN7EXAMPLE:2.7,AKIAIOSFODNN8EXAMPLE:2.4
     -- Example: user_reqs_block,AKIAIOSFODNN7EXAMPLE
-    -- Note that only "bnd" metrics has violation diff ratio
     local items = string_split(line, ",")
     if #items < 2 then
         core.Warning("Received invalid violation: " .. line)
@@ -192,11 +189,7 @@ function update_violates(line, curr_time)
         return
     end
 
-    if string.match(items[2], "_bnd_") then
-        update_violates_epoch(items, poli_time_us)
-    else
-        update_violates_map(items, poli_time)
-    end
+    update_violates_map(items, poli_time)
 end
 
 function update_violates_reqs(items, curr_time)
@@ -218,49 +211,6 @@ function update_violates_reqs(items, curr_time)
             reqs_map[v] = nil
         end
       end
-    end
-end
-
-
--- update violate epoch
-function update_violates_epoch(items, poli_time_us)
-    local idx = items[2]:find("_")
-    if idx == nil then
-        return
-    end
-
-    -- get key type (ip/user/buc)
-    local key_type = items[2]:sub(1, idx-1)
-
-    -- items[2]
-    local up_dwn
-    if string.match(items[2], "_up") then
-        up_dwn = "upload"
-    elseif string.match(items[2], "_dwn") then
-        up_dwn = "download"
-    else
-        core.Warning("Received invalid violation: " .. table.concat(items, ","))
-        return
-    end
-
-    for k, v in ipairs(items) do
-        if k > 2 then
-            local acc_key = "unknown"
-            local diff_ratio = "1.0"
-            local key_ratio_pair = string_split(v, ":")
-            if #key_ratio_pair == 2 then
-                acc_key = key_ratio_pair[1]
-                diff_ratio = key_ratio_pair[2]
-            elseif #key_ratio_pair == 1 then
-                acc_key = key_ratio_pair[1]
-            end
-            local key = key_type.."_"..acc_key
-            core.Debug("Throttle key "..key.." "..up_dwn.." "..poli_time_us)
-            local ret = core.throttle_key_speed(acc_key, up_dwn, poli_time_us, diff_ratio)
-            if not ret then
-                core.Err("Failed to set throttle: "..key.." "..up_dwn.." "..poli_time_us)
-            end
-        end
     end
 end
 
@@ -300,8 +250,6 @@ function ingest_policies(applet)
             return
         end        
         -- Example: policies\n1554317654000000,user_GET,AKIAIOSFODNN7EXAMPLE,AKIAIOSFODNN8EXAMPLE\n1554317654555000,ip_PUT,1.2.3.4
-        -- Example: policies\n1682013607888000,user_bnd_up,AKIAIOSFODNN7EXAMPLE:2.7,AKIAIOSFODNN8EXAMPLE:2.4
-        -- Note that only "bnd" metrics has violation diff ratio
         if string.find(inputs, "policies", 1, true) == 1 then
             -- this is a QoS policy issued by policy-generator
             curr_time = os.time()

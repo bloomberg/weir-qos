@@ -32,7 +32,6 @@
 
 #include <haproxy/freq_ctr-t.h>
 #include <haproxy/khash.h>
-#include <haproxy/rate_limit.h>
 
 const char* weir_flt_id = "weir bandwidth limitation filter";
 const int USERMAP_CLEANUP_INTERVAL_MS = 30000;
@@ -57,6 +56,8 @@ const unsigned int DEFAULT_MINIMUM_BANDWIDTH_LIMIT = 16 * 1024;
             BUG_ON(cond);                                                                                              \
         }                                                                                                              \
     } while (0)
+
+typedef enum { RL_UPLOAD, RL_DOWNLOAD } RateLimitDirection;
 
 struct user_direction_limit {
     bool limit_received;
@@ -104,7 +105,7 @@ struct weir_lim_state {
 
     char* limit_key;
     char* request_class;
-    char* bandwidth_limit_direction;
+    RateLimitDirection bandwidth_limit_direction;
     unsigned int next_allowed_send_tick;
     bool enabled;
     bool headers_processed;
@@ -186,7 +187,6 @@ int weir_ingest_limit_share_update(uint64_t timestamp, const char* user_key, con
  **************************************************************************/
 /* Initialize the filter. Returns -1 on error, else 0. */
 static int weir_init(struct proxy* px, struct flt_conf* fconf) {
-    init_speed_epoch_hashmaps();
     fconf->flags |= FLT_CFG_FL_HTX;
     return 0;
 }
@@ -228,15 +228,7 @@ static const char* method_name(enum http_meth_t method) {
     }
 }
 
-static DataDirection verb_direction(enum http_meth_t method) {
-    if ((method == HTTP_METH_PUT) || (method == HTTP_METH_POST)) {
-        return RL_UPLOAD;
-    } else {
-        return RL_DOWNLOAD;
-    }
-}
-
-static const char* direction_name(DataDirection direction) {
+static const char* direction_name(RateLimitDirection direction) {
     switch (direction) {
     case RL_UPLOAD:
         return "up";
@@ -288,11 +280,10 @@ static void weir_detach(struct stream* s, struct filter* filter) {
 
         WEIR_BUG_ON(st->limit == NULL); // We should definitely have a limit if we've been enabled on this stream
         WEIR_BUG_ON(st->limit_key == NULL);
-        WEIR_BUG_ON(st->bandwidth_limit_direction == NULL);
 
         HA_RWLOCK_WRLOCK(OTHER_LOCK, &conf->state_lock);
         st->limit->last_request_end_tick = now_ms;
-        if (verb_direction(s->txn->meth) == RL_DOWNLOAD) {
+        if (st->bandwidth_limit_direction == RL_DOWNLOAD) {
             st->limit->download.active_requests -= 1;
             active_requests = st->limit->download.active_requests;
         } else {
@@ -304,15 +295,12 @@ static void weir_detach(struct stream* s, struct filter* filter) {
         WARN_ON(active_requests < 0);
         send_log(NULL, LOG_INFO, "req_end~|~%s:%d~|~%s~|~%s~|~%s~|~%s~|~%d", inet_ntoa(st->remote_addr->sin_addr),
                  ntohs(st->remote_addr->sin_port), st->limit_key, method_name(s->txn->meth),
-                 st->bandwidth_limit_direction, conf->instance_id, active_requests);
-
-        rl_request_end(st->remote_addr);
+                 direction_name(st->bandwidth_limit_direction), conf->instance_id, active_requests);
     }
 
     /* release filter context allocated on attach */
     ha_free(&st->limit_key);     // This could be null if we rejected the request before attaching to it
     ha_free(&st->request_class); // This could be null
-    ha_free(&st->bandwidth_limit_direction);
     pool_free(pool_head_weir_lim_state, st);
     filter->ctx = NULL;
 }
@@ -340,7 +328,7 @@ static int weir_http_headers(struct stream* s, struct filter* filter, struct htt
 
         WEIR_BUG_ON(st->limit == NULL); // We should definitely have a limit if we've been enabled on this stream
         HA_RWLOCK_RDLOCK(OTHER_LOCK, &conf->state_lock);
-        if (verb_direction(s->txn->meth) == RL_DOWNLOAD) {
+        if (st->bandwidth_limit_direction == RL_DOWNLOAD) {
             active_requests = st->limit->download.active_requests;
         } else {
             active_requests = st->limit->upload.active_requests;
@@ -348,7 +336,6 @@ static int weir_http_headers(struct stream* s, struct filter* filter, struct htt
         HA_RWLOCK_RDUNLOCK(OTHER_LOCK, &conf->state_lock);
 
         WEIR_BUG_ON(st->limit_key == NULL);
-        WEIR_BUG_ON(st->bandwidth_limit_direction == NULL);
         // request_class is an optional argument, we should not assume it is always set
         const char* request_class = "";
         if (st->request_class != NULL) {
@@ -356,7 +343,7 @@ static int weir_http_headers(struct stream* s, struct filter* filter, struct htt
         }
         send_log(NULL, LOG_INFO, "req~|~%s:%d~|~%s~|~%s~|~%s~|~%s~|~%d~|~%s", inet_ntoa(st->remote_addr->sin_addr),
                  ntohs(st->remote_addr->sin_port), st->limit_key, method_name(s->txn->meth),
-                 st->bandwidth_limit_direction, conf->instance_id, active_requests, request_class);
+                 direction_name(st->bandwidth_limit_direction), conf->instance_id, active_requests, request_class);
     }
 
     msg->chn->analyse_exp = TICK_ETERNITY;
@@ -430,29 +417,60 @@ static struct apply_limit_result apply_bandwidth_limit(struct freq_ctr* counter,
 static int weir_http_payload(struct stream* s, struct filter* filter, struct http_msg* msg, unsigned int offset,
                              unsigned int len) {
     struct weir_lim_state* st = filter->ctx;
-    const DataDirection direction = (msg->chn == &s->req) ? RL_UPLOAD : RL_DOWNLOAD;
-    int bytes_to_forward = 0;
+    struct apply_limit_result limit_result = {};
+    const RateLimitDirection direction = (msg->chn == &s->req) ? RL_UPLOAD : RL_DOWNLOAD;
 
     WEIR_BUG_ON(!st->enabled); // We should only be registering the data callback when enabling the filter
-    if (st->remote_addr == NULL) {
-        bytes_to_forward = len;
-    } else if ((len > 0) &&
-               (!tick_isset(st->next_allowed_send_tick) || tick_is_expired(st->next_allowed_send_tick, now_ms))) {
+    if ((len > 0) && (!tick_isset(st->next_allowed_send_tick) || tick_is_expired(st->next_allowed_send_tick, now_ms))) {
+        struct weir_filter_config* conf = FLT_CONF(filter);
+        const int should_apply_limit = (direction == st->bandwidth_limit_direction);
+        int active_user_requests = 1;
+        bool limit_found = 0;
+        uint limit = 0;
+        struct freq_ctr* counter = NULL;
+
         st->next_allowed_send_tick = TICK_ETERNITY;
 
         WEIR_BUG_ON(st->limit == NULL);
-        WEIR_BUG_ON(st->bandwidth_limit_direction == NULL);
+        HA_RWLOCK_RDLOCK(OTHER_LOCK, &conf->state_lock);
+        if (direction == RL_DOWNLOAD) {
+            limit_found = st->limit->download.limit_received;
+            active_user_requests = st->limit->download.active_requests;
+            limit = st->limit->download.bytes_per_second;
+            counter = &st->limit->download.counter;
+        } else {
+            limit_found = st->limit->upload.limit_received;
+            active_user_requests = st->limit->upload.active_requests;
+            limit = st->limit->upload.bytes_per_second;
+            counter = &st->limit->upload.counter;
+        }
+        HA_RWLOCK_RDUNLOCK(OTHER_LOCK, &conf->state_lock);
 
-        // do not proceed with transferring data if we are throttling this connection
-        if (rl_speed_throttle(st->remote_addr, direction) == RL_THROTTLE) {
+        // We specifically need to apply a limit even if we don't find one for this user.
+        // That's because doing so tracks the user's usage in the frequency counter, meaning that when we do finally
+        // receive an updated limit for the user from polygen, our application of it will take into account the data
+        // transferred before that limit data was received.
+        // For example, if you managed to transfer 128kb in the time between the start of the transfer and receipt of
+        // the first limit from polygen, and that limit was 1mbps, then you would be permitted to send only 896kb for
+        // the remainder of that second, rather than 1024kb.
+        if (!limit_found) {
+            limit = conf->unknown_user_limit;
+        }
+        limit = MAX(limit, conf->minimum_limit);
+
+        WEIR_BUG_ON(counter == NULL);
+        if (should_apply_limit) {
+            limit_result = apply_bandwidth_limit(counter, limit, active_user_requests, len);
+        } else {
+            limit_result.bytes_to_forward = len;
+        }
+
+        if (limit_result.bytes_to_forward < len) {
             unsigned int* next_tick_ptr = (direction == RL_DOWNLOAD) ? &st->limit->download.next_throttle_log_tick
                                                                      : &st->limit->upload.next_throttle_log_tick;
             unsigned int next_throttle_log_tick = HA_ATOMIC_LOAD(next_tick_ptr);
 
-            send_log(NULL, LOG_DEBUG, "Throttling %s connection to %s:%u", st->bandwidth_limit_direction,
-                     inet_ntoa(st->remote_addr->sin_addr), ntohs(st->remote_addr->sin_port));
-
-            st->next_allowed_send_tick = tick_add(now_ms, MS_TO_TICKS(1));
+            st->next_allowed_send_tick = tick_add(now_ms, (limit_result.wait_ms ? limit_result.wait_ms : 1));
 
             if (!tick_isset(next_throttle_log_tick) || tick_is_expired(next_throttle_log_tick, now_ms)) {
                 unsigned int new_log_tick = tick_add(now_ms, MS_TO_TICKS(1000));
@@ -470,13 +488,18 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
                     WARN_ON(result != 0);
 
                     send_log(NULL, LOG_INFO, "weir-throttle~|~%lld~|~user_bnd_%s~|~%s", timestamp_usec,
-                             st->bandwidth_limit_direction, st->limit_key);
+                             direction_name(st->bandwidth_limit_direction), st->limit_key);
                 }
             }
-        } else {
-            bytes_to_forward = len;
-            rl_data_transferred(st->remote_addr, direction, len);
         }
+    }
+
+    if ((limit_result.bytes_to_forward > 0) && (st->remote_addr != NULL)) {
+        WEIR_BUG_ON(st->limit_key == NULL);
+
+        send_log(NULL, LOG_INFO, "data_xfer~|~%s:%d~|~%s~|~%s~|~%u", inet_ntoa(st->remote_addr->sin_addr),
+                 ntohs(st->remote_addr->sin_port), st->limit_key, direction_name(direction),
+                 limit_result.bytes_to_forward);
     }
 
     // Honestly, I don't understand exactly why this is required to make it work.
@@ -488,7 +511,7 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
     msg->chn->analyse_exp =
         tick_first((tick_is_expired(msg->chn->analyse_exp, now_ms) ? TICK_ETERNITY : msg->chn->analyse_exp),
                    st->next_allowed_send_tick);
-    return bytes_to_forward;
+    return limit_result.bytes_to_forward;
 }
 
 /********************************************************************
@@ -584,11 +607,12 @@ static enum act_return weir_enable_filter(struct act_rule* rule, struct proxy* p
     if (rule->arg.act.p[2]) {
         smp = sample_fetch_as_type(px, sess, s, sample_options, rule->arg.act.p[2], SMP_T_STR);
         if (smp && smp->data.u.str.area) {
-            ha_free(&st->bandwidth_limit_direction);
-            st->bandwidth_limit_direction = strdup(smp->data.u.str.area);
-            if (strcmp(st->bandwidth_limit_direction, "up") != 0 && strcmp(st->bandwidth_limit_direction, "dwn") != 0) {
-                send_log(NULL, LOG_WARNING, "WARNING: Unexpected bandwidth_limit_direction:%s",
-                         st->bandwidth_limit_direction);
+            if (strcmp(smp->data.u.str.area, "up") == 0) {
+                st->bandwidth_limit_direction = RL_UPLOAD;
+            } else if (strcmp(smp->data.u.str.area, "dwn") == 0) {
+                st->bandwidth_limit_direction = RL_DOWNLOAD;
+            } else {
+                send_log(NULL, LOG_WARNING, "WARNING: Unexpected bandwidth_limit_direction:%s", smp->data.u.str.area);
                 return ACT_RET_CONT;
             }
         }
@@ -617,7 +641,7 @@ static enum act_return weir_enable_filter(struct act_rule* rule, struct proxy* p
         st->limit = kh_value(conf->user_limit_state, iter);
         WEIR_BUG_ON(st->limit == NULL);
     }
-    if (verb_direction(s->txn->meth) == RL_DOWNLOAD) {
+    if (st->bandwidth_limit_direction == RL_DOWNLOAD) {
         st->limit->download.active_requests += 1;
     } else {
         st->limit->upload.active_requests += 1;
