@@ -317,6 +317,18 @@ static void weir_detach(struct stream* s, struct filter* filter) {
     filter->ctx = NULL;
 }
 
+static int weir_channel_end_analyze(struct stream* s, struct filter* filter, struct channel* chn) {
+    // We need to reset this to TICK_ETERNITY so that HAProxy does not think the filter needs to be called.
+    // This callback runs when we're finished with this filter and resetting analyse_exp here provides some
+    // fallback protection against scenarios where we've somehow finished processing the stream but analyse_exp
+    // is still set to a time in the future. If we didn't reset this here then once that time expired,
+    // HAProxy would continue to try to run this filter but with no data to forward it would never reset
+    // the expiry and so it would get stuck trying to run the filter in a loop until a watchdog timer fired
+    // and crashed HAProxy.
+    chn->analyse_exp = TICK_ETERNITY;
+    return 1;
+}
+
 /**************************************************************************
  * Hooks to filter HTTP messages
  *************************************************************************/
@@ -502,6 +514,8 @@ static struct flt_ops weir_lim_ops = {
     /* Handle start/stop of requests */
     .attach = weir_attach,
     .detach = weir_detach,
+
+    .channel_end_analyze = weir_channel_end_analyze,
 
     /* Filter HTTP requests and responses */
     .http_headers = weir_http_headers,
