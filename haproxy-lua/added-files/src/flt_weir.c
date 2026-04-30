@@ -491,15 +491,14 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
         }
     }
 
-    // Honestly, I don't understand exactly why this is required to make it work.
-    // This is what flt_bwlim does and if we don't set this correctly then either
-    // HAProxy stops processing the stream (if we return 0 bytes to forward without
-    // setting `analyse_exp` appropriately on the channel) or it hits a watchdog
-    // timer and asserts (if we set return 0 bytes to forward and set `analyse_exp`
-    // to something too small).
+    // analyse_exp defines the minimum time at which this analyser (filter) should run again on this channel.
+    // When we throttle a transfer, we set this into the future to avoid delay forwarding of data on this channel
+    // without being called in a tight loop. Whenever this value is in the past, HAProxy will run this analyser
+    // so it should always either be TICK_ETERNITY or some finite value in the future.
     msg->chn->analyse_exp =
         tick_first((tick_is_expired(msg->chn->analyse_exp, now_ms) ? TICK_ETERNITY : msg->chn->analyse_exp),
                    st->next_allowed_send_tick);
+    BUG_ON(tick_is_expired(msg->chn->analyse_exp, now_ms));
     return bytes_to_forward;
 }
 
