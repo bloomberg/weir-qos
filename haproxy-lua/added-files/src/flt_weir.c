@@ -318,15 +318,21 @@ static void weir_detach(struct stream* s, struct filter* filter) {
     filter->ctx = NULL;
 }
 
-static int weir_channel_end_analyze(struct stream* s, struct filter* filter, struct channel* chn) {
-    // We need to reset this to TICK_ETERNITY so that HAProxy does not think the filter needs to be called.
-    // This callback runs when we're finished with this filter and resetting analyse_exp here provides some
-    // fallback protection against scenarios where we've somehow finished processing the stream but analyse_exp
-    // is still set to a time in the future. If we didn't reset this here then once that time expired,
-    // HAProxy would continue to try to run this filter but with no data to forward it would never reset
-    // the expiry and so it would get stuck trying to run the filter in a loop until a watchdog timer fired
-    // and crashed HAProxy.
-    chn->analyse_exp = TICK_ETERNITY;
+static int weir_http_end(struct stream* s, struct filter* filter, struct http_msg* msg) {
+    // We need to reset this to TICK_ETERNITY so that HAProxy does not think the
+    // filter needs to be called. This callback runs when the HTTP
+    // request/response has been fully processed and all data has been forwarded,
+    // meaning we're finished with this filter. Resetting analyse_exp here
+    // provides some fallback protection against scenarios where we've somehow
+    // finished processing the stream but analyse_exp is still set to a time in
+    // the future. If we didn't reset this here then once that time expired,
+    // HAProxy would continue to try to run this filter but with no data to
+    // forward it would never call the http_payload callback to reset the expiry
+    // meaning it would get stuck trying to run the filter in a loop until a
+    // watchdog timer fired and crashed HAProxy.
+    WEIR_BUG_ON(msg == NULL);
+    WEIR_BUG_ON(msg->chn == NULL);
+    msg->chn->analyse_exp = TICK_ETERNITY;
     return 1;
 }
 
@@ -516,11 +522,10 @@ static struct flt_ops weir_lim_ops = {
     .attach = weir_attach,
     .detach = weir_detach,
 
-    .channel_end_analyze = weir_channel_end_analyze,
-
     /* Filter HTTP requests and responses */
     .http_headers = weir_http_headers,
     .http_payload = weir_http_payload,
+    .http_end = weir_http_end,
 };
 
 /* Enable the filter on a stream. It always returns ACT_RET_CONT. On error, the rule is ignored.
