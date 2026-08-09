@@ -96,10 +96,10 @@ def retrieve_data_from_redis(
         except Exception as ex:
             logger.warning(
                 f"failed to decode a redis key '{encoded_key!r}': {ex}"
-            )  # type:ignore
+            )  # type: ignore
             continue
 
-    for decoded_key in decoded_redis_keys:  # type:ignore
+    for decoded_key in decoded_redis_keys:  # type: ignore
         try:
             metric = MetricService.create_user_level_metric(decoded_key, current_epoch)
             if metric.metric_type == UsageType.VERB:
@@ -143,19 +143,31 @@ def retrieve_data_from_redis(
 # main process that handles gathering data from redis-qos
 #
 def get_redis_server_connection(redis_server: str) -> redis.Redis:
+    host, port = redis_server.split(":")
     while True:
         try:
-            host, port = redis_server.split(":")
             rs_conn = redis.Redis(host=host, port=int(port), db=0)
             if not rs_conn.ping():
                 raise Exception("connection established but redis is not pinging")
             return rs_conn
+        except redis.exceptions.ConnectionError as ex:
+            logger.warning(
+                f"failed to connect {redis_server}: {ex}; retrying in 1 second"
+            )
+            time.sleep(1)
         except Exception as ex:
             logger.exception(f"failed to connect {redis_server}: {ex}")
             time.sleep(1)
 
 
 MIN_SLEEP_TIME_SEC_PER_ROUND = 0.1  # 100 msec
+
+
+def is_redis_connection_alive(rs_conn: redis.Redis) -> bool:
+    try:
+        return bool(rs_conn.ping())
+    except redis.exceptions.RedisError:
+        return False
 
 
 def redis_consumer_process(
@@ -167,7 +179,7 @@ def redis_consumer_process(
 
     while True:
         try:
-            if rs_conn is None or not rs_conn.ping():
+            if rs_conn is None or not is_redis_connection_alive(rs_conn):
                 rs_conn = get_redis_server_connection(redis_server)
 
             start_time = time.time()
