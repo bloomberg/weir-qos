@@ -197,6 +197,8 @@ void msgProducerThread(int sock, Processor::FIFOList& queue, std::shared_ptr<spd
                 logger->error("Queue is full, dropping message: {}", data_start);
             }
             logger->debug("haproxy logged command: {}", buf_view);
+        } else if (buf_view.find(RawEvents::stsTokenRoleMapping()) != std::string_view::npos) {
+            // StsTokenRoleMapping messages are intentionally consumed but not queued yet.
         } else if (buf_view[0] == '{') {
             // JSON line from HAProxy
             access_logger->info("{}", buf_view);

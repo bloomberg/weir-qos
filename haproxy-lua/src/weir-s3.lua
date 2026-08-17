@@ -235,3 +235,91 @@ core.register_fetches("weir_should_block_s3_request", function(txn)
     txn:set_var("txn.op_class", op_class)
     return weir_should_block_request(txn, access_key, op_class)
 end)
+
+function is_sts_credential_req(headers)
+    local sec_header=headers['x-amz-security-token']
+    if  sec_header ~= nil then
+        local sts_header=headers['x-amz-security-token'][0]
+        if sts_header ~= nil then
+          return 1
+        else
+          return 0
+        end
+    else
+        return 0
+    end
+end
+
+function sts_qos_populate_txn_context(txn)
+    -- here we are evaluating to see of this is an sts assume role request and if yes, we attach an 
+    -- "if_body_parse" property in the http req txn context. This will be available in the http resp txn context and we can 
+    -- parse the bodies of those transactions for getting useful info. e.g. StsToken-Role mapping
+
+    local content_length=tonumber(txn.sf:req_fhdr("Content-Length"))  
+    -- Transactions which need body parsing - This is performance degrading , so enable it only for a small subset of transactions
+    -- The transactions which have this enabled should be rated limited ideally   
+    local body_parse_txns = {["AssumeRole"] = true}
+
+    -- this filters out many of the data plane operations
+    if content_length and type(content_length) == "number" and content_length > 0 then
+        -- Note that this nested to filter out some of the operations that happens in haproxy layer
+        local url_path=txn.f:path()
+        if url_path ~= nil and url_path == "/" then  
+            local req_headers_temp = txn.http:req_get_headers()
+            local req_body_param=(txn.f:req_body_param() == nil) and "" or txn.f:req_body_param() 
+            -- set flag in the txn context for the request if there is a content length and url path is and 
+            -- if the body param is in the list of body parse txns. 
+            if body_parse_txns[req_body_param] then 
+                -- set_var sets it in the txn scope
+                txn:set_var("txn.if_body_parse", "yes") 
+            end
+        end
+    end
+end
+
+core.register_action("sts_qos_populate_txn_context", { "http-req" }, sts_qos_populate_txn_context)
+
+StsFilter = {}
+StsFilter.id = "Lua Sts filter"
+StsFilter.flags = filter.FLT_CFG_FL_HTX
+StsFilter.__index = StsFilter
+
+function StsFilter:new()
+    local trace = {}
+    setmetatable(trace, StsFilter)
+    trace.res_len = 0
+    return trace
+end
+
+function StsFilter:start_analyze(txn, chn)
+    -- Register a payload filter only for AssumeRole responses.
+    if chn and chn:is_resp() and txn:get_var("txn.if_body_parse") ~= nil then
+        filter.register_data_filter(self, chn)
+    end
+end
+
+function StsFilter:end_analyze(txn, chn)
+end
+
+function StsFilter:http_payload(txn, http_msg)
+    if http_msg ~= nil and type(http_msg) == "table" then
+        if http_msg.channel ~= nil and type(http_msg.channel) == "table" then
+            if http_msg.channel:is_resp() then
+                local is_assume_role_setvar = txn:get_var("txn.if_body_parse")
+                if is_assume_role_setvar ~= nil and type(http_msg.body) == "function" then
+                    -- AssumeRole responses are small; one read is sufficient for token extraction.
+                    local body = http_msg:body(-930)
+                    if body ~= nil and type(body) == "string" and #body > 0 then
+                        core.Info("role_ststoken~|~" .. body)
+                        filter.unregister_data_filter(self, http_msg.channel)
+                    end
+                end
+            end
+        end
+    end
+end
+
+core.register_filter("StsFilter", StsFilter, function(sts_filter, args)
+    return sts_filter
+end)
+

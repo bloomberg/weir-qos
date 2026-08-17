@@ -185,6 +185,8 @@ void Processor::messageConsumerThread(std::stop_token stop) {
                 processActiveRequests(buffer);
             } else if (buffer.find(RawEvents::reqEnd(), 0) == 0) {
                 processReqEnd(buffer);
+            } else if (buffer.find(RawEvents::stsTokenRoleMapping(), 0) == 0) {
+                processStsTokenRoleMapping(buffer);
             } else {
                 m_logger->info("Unrecognized message:{}", buffer);
             }
@@ -395,5 +397,7 @@ void Processor::processReqEnd(std::string_view raw_input) {
 
     ++m_qos_not_send_count;
 }
+
+void Processor::processStsTokenRoleMapping(std::string_view raw_input) { (void)raw_input; }
 
 } // namespace syslogsrv

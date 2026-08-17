@@ -39,6 +39,7 @@ struct RawEvents {
     static constexpr const char* reqEnd() { return "req_end~|~"; }
     static constexpr const char* dataXfer() { return "data_xfer~|~"; }
     static constexpr const char* activeReqs() { return "active_reqs~|~"; }
+    static constexpr const char* stsTokenRoleMapping() { return "role_ststoken~|~"; }
 };
 
 // Orchestrates processing of messages from HAProxy.
@@ -128,6 +129,7 @@ class Processor {
     void processDataXfer(std::string_view raw_input);
     void processActiveRequests(std::string_view raw_input);
     void processReqEnd(std::string_view raw_input);
+    void processStsTokenRoleMapping(std::string_view raw_input);
 
     // Consumes the HAProxy messages added into the `message_queue` by the main
     // thread (see syslog_server.cpp::msgProducerThread), turns them into commands
