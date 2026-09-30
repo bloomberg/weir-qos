@@ -81,6 +81,76 @@ TEST(msg_processor, doesnt_connect_to_redis_on_flush_if_there_was_a_recent_conne
     proc.sendToRedisQos();
 }
 
+// Control messages
+
+TEST(msg_processor, control_messages_are_recognised_only_by_a_leading_tag) {
+    EXPECT_TRUE(isControlMessage("req~|~1.2.3.4:58840~|~AKIAIOSFODNN7EXAMPLE~|~PUT~|~up~|~i1~|~7~|~"));
+    EXPECT_TRUE(isControlMessage("req_end~|~1.2.3.4:58840~|~AKIAIOSFODNN7EXAMPLE~|~PUT~|~up~|~i1~|~7"));
+    EXPECT_TRUE(isControlMessage("data_xfer~|~1.2.3.4:55094~|~AKIAIOSFODNN7EXAMPLE~|~dwn~|~4096"));
+    EXPECT_TRUE(isControlMessage("active_reqs~|~i1~|~AKIAIOSFODNN7EXAMPLE~|~up~|~7"));
+
+    // Access-log lines carry the client's request URI verbatim, so a tag inside one must not count.
+    EXPECT_FALSE(isControlMessage(R"({"method":"GET","uri":"/x?data_xfer~|~k~|~KEY~|~dwn~|~-2000000000"})"));
+    EXPECT_FALSE(isControlMessage("10.0.0.1:1234 [29/Sep/2026:18:00:00] fe be/s 0/0/0/1/1 200 1 - - ---- "
+                                  "\"GET /data_xfer~|~a:1~|~~|~up~|~-100000000 HTTP/1.1\""));
+    EXPECT_FALSE(isControlMessage(" req~|~1.2.3.4:58840~|~KEY~|~PUT~|~up~|~i1~|~7~|~"));
+    EXPECT_FALSE(isControlMessage("xactive_reqs~|~i1~|~KEY~|~up~|~7"));
+    EXPECT_FALSE(isControlMessage(""));
+}
+
+namespace {
+const char* const HANDLER_CONFIG =
+    "{ endpoint: localdev.dockerdc, redis_server: localhost:9004, redis_qos_ttl: 2, redis_qos_conn_ttl: 60 }";
+}
+
+TEST(msg_processor, data_xfer_rejects_trailing_junk_and_negative_lengths) {
+    TestLogger testlog;
+    Processor::FIFOList mq(1);
+    Processor proc(mq, YAML::Load(HANDLER_CONFIG), 0, TimeWrapper(),
+                   std::make_unique<testing::NiceMock<MockNetInterface>>());
+
+    proc.processDataXfer("data_xfer~|~a:1~|~KEY~|~up~|~-100000000");
+    proc.processDataXfer("data_xfer~|~a:1~|~KEY~|~up~|~100 HTTP/1.1\"");
+    proc.processDataXfer("data_xfer~|~a:1~|~KEY~|~up~|~");
+    EXPECT_TRUE(proc.m_qos_redis_commands.empty());
+
+    proc.processDataXfer("data_xfer~|~a:1~|~KEY~|~up~|~4096");
+    ASSERT_EQ(proc.m_qos_redis_commands.size(), 1);
+    EXPECT_EQ(proc.m_qos_redis_commands.begin()->second, 4096);
+}
+
+TEST(msg_processor, req_rejects_trailing_junk_in_active_requests) {
+    TestLogger testlog;
+    Processor::FIFOList mq(1);
+    Processor proc(mq, YAML::Load(HANDLER_CONFIG), 0, TimeWrapper(),
+                   std::make_unique<testing::NiceMock<MockNetInterface>>());
+
+    proc.processReq("req~|~1.2.3.4:58840~|~KEY~|~GET~|~dwn~|~i1~|~7x~|~");
+    proc.processReq("req~|~1.2.3.4:58840~|~KEY~|~GET~|~dwn~|~i1~|~-3~|~");
+    EXPECT_TRUE(proc.m_qos_redis_commands.empty());
+    EXPECT_TRUE(proc.m_qos_redis_active_reqs.empty());
+
+    proc.processReq("req~|~1.2.3.4:58840~|~KEY~|~GET~|~dwn~|~i1~|~7~|~");
+    EXPECT_EQ(proc.m_qos_redis_active_reqs.at("conn_v2_user_dwn_i1_KEY$localdev.dockerdc"), 7);
+}
+
+TEST(msg_processor, active_request_counts_reject_trailing_junk) {
+    TestLogger testlog;
+    Processor::FIFOList mq(1);
+    Processor proc(mq, YAML::Load(HANDLER_CONFIG), 0, TimeWrapper(),
+                   std::make_unique<testing::NiceMock<MockNetInterface>>());
+
+    proc.processActiveRequests("active_reqs~|~i1~|~KEY~|~up~|~9000 trailing");
+    proc.processActiveRequests("active_reqs~|~i1~|~KEY~|~up~|~-1");
+    proc.processReqEnd("req_end~|~1.2.3.4:1~|~KEY~|~PUT~|~up~|~i1~|~5\"}");
+    EXPECT_TRUE(proc.m_qos_redis_active_reqs.empty());
+
+    proc.processActiveRequests("active_reqs~|~i1~|~KEY~|~up~|~9");
+    proc.processReqEnd("req_end~|~1.2.3.4:1~|~KEY~|~PUT~|~dwn~|~i1~|~0");
+    EXPECT_EQ(proc.m_qos_redis_active_reqs.at("conn_v2_user_up_i1_KEY$localdev.dockerdc"), 9);
+    EXPECT_EQ(proc.m_qos_redis_active_reqs.at("conn_v2_user_dwn_i1_KEY$localdev.dockerdc"), 0);
+}
+
 TEST(redis_cmd_key, different_users_produce_different_hashes) {
     auto time_now = TimeWrapper().now();
     Processor::RedisCmdKey key1 = {"user_AKIAIOSFODNN7EXAMPL1", time_now, "GET"};

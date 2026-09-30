@@ -24,6 +24,9 @@ namespace syslogsrv {
 namespace test {
 FORWARD_DECLARE_TEST(msg_processor, connects_to_redis_on_flush_if_enough_time_has_passed_since_last_connect);
 FORWARD_DECLARE_TEST(msg_processor, doesnt_connect_to_redis_on_flush_if_there_was_a_recent_connect_attempt);
+FORWARD_DECLARE_TEST(msg_processor, data_xfer_rejects_trailing_junk_and_negative_lengths);
+FORWARD_DECLARE_TEST(msg_processor, req_rejects_trailing_junk_in_active_requests);
+FORWARD_DECLARE_TEST(msg_processor, active_request_counts_reject_trailing_junk);
 FORWARD_DECLARE_TEST(redis_cmd_key, different_users_produce_different_hashes);
 FORWARD_DECLARE_TEST(redis_cmd_key, different_timestamps_produce_different_hashes);
 FORWARD_DECLARE_TEST(redis_cmd_key, different_categories_produce_different_hashes);
@@ -40,6 +43,11 @@ struct RawEvents {
     static constexpr const char* dataXfer() { return "data_xfer~|~"; }
     static constexpr const char* activeReqs() { return "active_reqs~|~"; }
 };
+
+// Whether a datagram from HAProxy is a control message, i.e. begins with one of the RawEvents tags.
+// Only the start counts: access-log lines share the port and embed the client's request URI
+// verbatim, so a tag appearing anywhere else is data a client chose, not a control message.
+bool isControlMessage(std::string_view datagram);
 
 // Orchestrates processing of messages from HAProxy.
 // A thread pulls messages off the in-memory queue, parses them and determines what
@@ -62,6 +70,9 @@ class Processor {
   private:
     FRIEND_TEST(test::msg_processor, connects_to_redis_on_flush_if_enough_time_has_passed_since_last_connect);
     FRIEND_TEST(test::msg_processor, doesnt_connect_to_redis_on_flush_if_there_was_a_recent_connect_attempt);
+    FRIEND_TEST(test::msg_processor, data_xfer_rejects_trailing_junk_and_negative_lengths);
+    FRIEND_TEST(test::msg_processor, req_rejects_trailing_junk_in_active_requests);
+    FRIEND_TEST(test::msg_processor, active_request_counts_reject_trailing_junk);
     FRIEND_TEST(test::redis_cmd_key, different_users_produce_different_hashes);
     FRIEND_TEST(test::redis_cmd_key, different_timestamps_produce_different_hashes);
     FRIEND_TEST(test::redis_cmd_key, different_categories_produce_different_hashes);
