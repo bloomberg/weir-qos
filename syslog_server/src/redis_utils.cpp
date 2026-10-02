@@ -20,6 +20,8 @@
 #include <adapters/libev.h>
 #endif
 
+#include <spdlog/fmt/bundled/ranges.h>
+
 #include "common.h"
 #include "redis_utils.h"
 
@@ -62,8 +64,9 @@ int NetClass::redisLibevAttach(struct ev_loop* loop, redisAsyncContext* ac) { re
 
 void NetClass::redisAsyncDisconnect(redisAsyncContext* ac) { return ::redisAsyncDisconnect(ac); }
 
-int NetClass::redisAsyncCommand(redisAsyncContext* ac, redisCallbackFn* fn, void* privdata, const char* format) {
-    return ::redisAsyncCommand(ac, fn, privdata, format);
+int NetClass::redisAsyncCommandArgv(redisAsyncContext* ac, redisCallbackFn* fn, void* privdata, int argc,
+                                    const char** argv, const size_t* argvlen) {
+    return ::redisAsyncCommandArgv(ac, fn, privdata, argc, argv, argvlen);
 }
 
 void NetClass::redisAsyncFree(redisAsyncContext* ac) {
@@ -250,13 +253,29 @@ void RedisServerConnection::replyCallback(redisAsyncContext* c, void* r, void* p
     }
 }
 
-void RedisServerConnection::addCommand(const std::string& cmd) {
-    m_logger->debug("Redis command: {}", cmd);
+void RedisServerConnection::addCommand(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        m_logger->error("Refusing to send an empty command to {}", m_conn_id);
+        return;
+    }
+    m_logger->debug("Redis command: {}", fmt::join(args, " "));
     ++m_total_sent_cnt;
 
-    int r = m_redis_net->redisAsyncCommand(m_async_context, this->replyCallback,
-                                           nullptr, // privdata unused
-                                           cmd.c_str());
+    // Each argument is passed with an explicit length, so hiredis copies the bytes as given:
+    // a value is never scanned for format specifiers or split on whitespace. The pointers
+    // alias `args`, which outlives the call; hiredis copies them before returning.
+    std::vector<const char*> argv;
+    std::vector<size_t> argvlen;
+    argv.reserve(args.size());
+    argvlen.reserve(args.size());
+    for (const auto& arg : args) {
+        argv.push_back(arg.data());
+        argvlen.push_back(arg.size());
+    }
+
+    int r = m_redis_net->redisAsyncCommandArgv(m_async_context, this->replyCallback,
+                                               nullptr, // privdata unused
+                                               static_cast<int>(argv.size()), argv.data(), argvlen.data());
 
     if (r != REDIS_OK) {
         // we should get connection closed callback eventually

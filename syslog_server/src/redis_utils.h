@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <async.h>
 #include <condition_variable>
+#include <cstddef>
 #include <ev.h>
 #include <functional>
 #include <hiredis.h>
@@ -15,6 +16,7 @@
 #include <netdb.h>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <vector>
 
 #include "common.h"
 
@@ -41,6 +43,8 @@ FORWARD_DECLARE_TEST(MockLog, replyCallbackNull);
 FORWARD_DECLARE_TEST(MockLog, replyCallbackNoNull);
 FORWARD_DECLARE_TEST(MockLog, addCommandNoRedis);
 FORWARD_DECLARE_TEST(MockLog, addCommandRedis);
+FORWARD_DECLARE_TEST(MockLog, addCommandPassesArgumentsVerbatim);
+FORWARD_DECLARE_TEST(MockLog, addCommandRejectsEmptyCommand);
 } // namespace test
 
 enum class RedisConnectionState {
@@ -81,6 +85,8 @@ class RedisServerConnection {
     FRIEND_TEST(test::MockLog, replyCallbackNoNull);
     FRIEND_TEST(test::MockLog, addCommandNoRedis);
     FRIEND_TEST(test::MockLog, addCommandRedis);
+    FRIEND_TEST(test::MockLog, addCommandPassesArgumentsVerbatim);
+    FRIEND_TEST(test::MockLog, addCommandRejectsEmptyCommand);
 
     // logging
     std::shared_ptr<spdlog::logger> m_logger;
@@ -134,8 +140,12 @@ class RedisServerConnection {
     // If reconnect is needed, disconnect to initiate re-connect.
     void reconnectIfNeeded();
 
-    // add a Redis command to the async pipeline
-    void addCommand(const std::string& cmd);
+    // add a Redis command to the async pipeline. `args` is the command followed by its
+    // arguments, e.g. {"hincrby", key, field, "1"}. Each is sent as a discrete, length-prefixed
+    // argument, so values may contain '%', whitespace or any other byte. Values here are
+    // derived from unauthenticated UDP syslog messages, so never assemble a command into a
+    // single string and hand it to a hiredis printf-style API.
+    void addCommand(const std::vector<std::string>& args);
 
     // drain the async pipeline. Note that replies will be delivered
     // asynchronously via the callback functions listed above.
@@ -156,7 +166,8 @@ class NetInterface {
     virtual redisAsyncContext* redisAsyncConnect(const char* ip, int port) = 0;
     virtual int redisLibevAttach(EV_P_ redisAsyncContext* ac) = 0;
     virtual void redisAsyncDisconnect(redisAsyncContext* ac) = 0;
-    virtual int redisAsyncCommand(redisAsyncContext* ac, redisCallbackFn* fn, void* privdata, const char* format) = 0;
+    virtual int redisAsyncCommandArgv(redisAsyncContext* ac, redisCallbackFn* fn, void* privdata, int argc,
+                                      const char** argv, const size_t* argvlen) = 0;
     virtual void redisAsyncFree(redisAsyncContext* ac) = 0;
 };
 
@@ -169,7 +180,8 @@ class NetClass : public NetInterface {
     redisAsyncContext* redisAsyncConnect(const char* ip, int port) override;
     int redisLibevAttach(struct ev_loop* loop, redisAsyncContext* ac) override;
     void redisAsyncDisconnect(redisAsyncContext* ac) override;
-    int redisAsyncCommand(redisAsyncContext* ac, redisCallbackFn* fn, void* privdata, const char* format) override;
+    int redisAsyncCommandArgv(redisAsyncContext* ac, redisCallbackFn* fn, void* privdata, int argc, const char** argv,
+                              const size_t* argvlen) override;
     void redisAsyncFree(redisAsyncContext* ac) override;
 };
 

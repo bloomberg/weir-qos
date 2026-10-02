@@ -20,7 +20,8 @@ class MockNetClass : public NetInterface {
     MOCK_METHOD(redisAsyncContext*, redisAsyncConnect, (const char*, int), (override));
     MOCK_METHOD(int, redisLibevAttach, (EV_P_ redisAsyncContext*), (override));
     MOCK_METHOD(void, redisAsyncDisconnect, (redisAsyncContext*), (override));
-    MOCK_METHOD(int, redisAsyncCommand, (redisAsyncContext*, redisCallbackFn*, void*, const char*), (override));
+    MOCK_METHOD(int, redisAsyncCommandArgv,
+                (redisAsyncContext*, redisCallbackFn*, void*, int, const char**, const size_t*), (override));
     MOCK_METHOD(void, redisAsyncFree, (redisAsyncContext*), (override));
 };
 
@@ -625,9 +626,9 @@ TEST_F(MockLog, addCommandNoRedis) {
     conn.m_total_sent_failure = total_sent_failure;
     conn.m_conn_id = "fake_id";
 
-    EXPECT_CALL(*p, redisAsyncCommand).WillOnce(testing::Return(REDIS_ERR));
+    EXPECT_CALL(*p, redisAsyncCommandArgv).WillOnce(testing::Return(REDIS_ERR));
 
-    conn.addCommand("fake_command");
+    conn.addCommand({"fake_command"});
 
     logger->flush();
     std::ifstream log(MOCK_LOG);
@@ -648,12 +649,47 @@ TEST_F(MockLog, addCommandRedis) {
     conn.m_total_sent_cnt = total_sent_cnt;
     conn.m_total_sent_failure = total_sent_failure;
 
-    EXPECT_CALL(*p, redisAsyncCommand).WillOnce(testing::Return(REDIS_OK));
+    EXPECT_CALL(*p, redisAsyncCommandArgv).WillOnce(testing::Return(REDIS_OK));
 
-    conn.addCommand("fake_command");
+    conn.addCommand({"fake_command"});
 
     EXPECT_EQ(conn.m_total_sent_cnt, total_sent_cnt + 1);
     EXPECT_EQ(conn.m_total_sent_failure, total_sent_failure);
+}
+TEST_F(MockLog, addCommandPassesArgumentsVerbatim) {
+    auto mock_net = std::make_unique<MockNetClass>();
+    MockNetClass* p = mock_net.get();
+    RedisServerConnection conn("127.0.0.1", 1234, std::move(mock_net));
+
+    // Values come from unauthenticated syslog messages. Format specifiers, whitespace and
+    // embedded NULs must reach hiredis byte-for-byte as discrete arguments.
+    const std::vector<std::string> args = {"hincrby", "verb_1_user_%s%s%n%p %b$dev.dc", std::string("a\0b c", 5),
+                                           "1"};
+    std::vector<std::string> received;
+    EXPECT_CALL(*p, redisAsyncCommandArgv)
+        .WillOnce([&received](redisAsyncContext*, redisCallbackFn*, void*, int argc, const char** argv,
+                              const size_t* argvlen) {
+            for (int i = 0; i < argc; ++i) {
+                received.emplace_back(argv[i], argvlen[i]);
+            }
+            return REDIS_OK;
+        });
+
+    conn.addCommand(args);
+
+    EXPECT_EQ(received, args);
+    EXPECT_EQ(conn.m_total_sent_failure, 0);
+}
+TEST_F(MockLog, addCommandRejectsEmptyCommand) {
+    auto mock_net = std::make_unique<MockNetClass>();
+    MockNetClass* p = mock_net.get();
+    RedisServerConnection conn("127.0.0.1", 1234, std::move(mock_net));
+
+    EXPECT_CALL(*p, redisAsyncCommandArgv).Times(0);
+
+    conn.addCommand({});
+
+    EXPECT_EQ(conn.m_total_sent_cnt, 0);
 }
 
 } // namespace test

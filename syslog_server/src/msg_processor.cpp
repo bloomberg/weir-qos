@@ -275,20 +275,20 @@ void Processor::sendToRedisQos() {
 
         const auto ss_key = fmt::v10::format("verb_{}_{}${}", getEpochSecs(key.m_timestamp), key.m_user, m_endpoint);
 
-        auto ss_cmd = fmt::v10::format("hincrby {} {} {}", ss_key, key.m_cat, val);
-        m_qos_redis_conn->addCommand(ss_cmd);
+        // The key and field come from syslog messages, so they are sent as separate
+        // arguments; see RedisServerConnection::addCommand.
+        m_qos_redis_conn->addCommand({"hincrby", ss_key, key.m_cat, std::to_string(val)});
 
         if (keys_found.insert(ss_key).second) {
-            ss_cmd = fmt::v10::format("expire {} {}", ss_key, m_redis_qos_ttl);
-            m_qos_redis_conn->addCommand(ss_cmd);
+            m_qos_redis_conn->addCommand({"expire", ss_key, std::to_string(m_redis_qos_ttl)});
         }
     }
     m_qos_redis_commands.clear();
 
     for (const auto& [key, active_request_count] : m_qos_redis_active_reqs) {
         // example key: conn_v2_user_up_instance1234_AKIAIOSFODNN7EXAMPLE$dev.dc
-        const auto ss_cmd = fmt::v10::format("set {} {} ex {}", key, active_request_count, m_redis_qos_conn_ttl);
-        m_qos_redis_conn->addCommand(ss_cmd);
+        m_qos_redis_conn->addCommand(
+            {"set", key, std::to_string(active_request_count), "ex", std::to_string(m_redis_qos_conn_ttl)});
     }
     m_qos_redis_active_reqs.clear();
 }

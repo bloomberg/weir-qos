@@ -19,7 +19,8 @@ class MockNetInterface : public NetInterface {
     MOCK_METHOD(redisAsyncContext*, redisAsyncConnect, (const char*, int), (override));
     MOCK_METHOD(int, redisLibevAttach, (EV_P_ redisAsyncContext*), (override));
     MOCK_METHOD(void, redisAsyncDisconnect, (redisAsyncContext*), (override));
-    MOCK_METHOD(int, redisAsyncCommand, (redisAsyncContext*, redisCallbackFn*, void*, const char*), (override));
+    MOCK_METHOD(int, redisAsyncCommandArgv,
+                (redisAsyncContext*, redisCallbackFn*, void*, int, const char**, const size_t*), (override));
     MOCK_METHOD(void, redisAsyncFree, (redisAsyncContext*), (override));
 };
 
