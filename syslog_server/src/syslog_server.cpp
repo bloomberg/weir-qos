@@ -178,26 +178,13 @@ void msgProducerThread(int sock, Processor::FIFOList& queue, std::shared_ptr<spd
             buf_view.remove_suffix(1);
         }
 
-        size_t pos = buf_view.find(RawEvents::reqStart());
-        if (pos == std::string_view::npos) {
-            pos = buf_view.find(RawEvents::reqEnd());
-        }
-        if (pos == std::string_view::npos) {
-            pos = buf_view.find(RawEvents::dataXfer());
-        }
-        if (pos == std::string_view::npos) {
-            pos = buf_view.find(RawEvents::activeReqs());
-        }
-        if (pos == std::string_view::npos) {
-            pos = buf_view.find(RawEvents::reqEnd());
-        }
-        if (pos != std::string_view::npos) {
-            std::string_view data_start = buf_view.substr(pos);
-            if (!queue.try_enqueue(std::string(data_start))) {
-                logger->error("Queue is full, dropping message: {}", data_start);
+        // HAProxy logs with `format raw`, so a control message's tag is the first thing in the datagram.
+        if (isControlMessage(buf_view)) {
+            if (!queue.try_enqueue(std::string(buf_view))) {
+                logger->error("Queue is full, dropping message: {}", buf_view);
             }
             logger->debug("haproxy logged command: {}", buf_view);
-        } else if (buf_view[0] == '{') {
+        } else if (!buf_view.empty() && buf_view[0] == '{') {
             // JSON line from HAProxy
             access_logger->info("{}", buf_view);
         } else {

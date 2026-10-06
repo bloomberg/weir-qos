@@ -34,12 +34,29 @@ bool isPrintableASCII(const std::string_view key) {
     return std::all_of(key.begin(), key.end(), [](char c) { return std::isprint(static_cast<unsigned char>(c)); });
 }
 
+// Parses the whole of `token` as a non-negative integer. Unlike a bare std::from_chars this rejects
+// trailing characters, so "7 HTTP/1.1" or "-5" is an error rather than 7 or -5.
+bool parseNonNegative(std::string_view token, int& value) {
+    const auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), value);
+    return ec == std::errc{} && ptr == token.data() + token.size() && value >= 0;
+}
+
 uint32_t getEpochSecs(const std::chrono::system_clock::time_point& time_point) {
     return std::chrono::duration_cast<std::chrono::seconds>(time_point.time_since_epoch()).count();
 }
 } // namespace
 
 namespace syslogsrv {
+
+bool isControlMessage(std::string_view datagram) {
+    for (const std::string_view tag :
+         {RawEvents::reqStart(), RawEvents::reqEnd(), RawEvents::dataXfer(), RawEvents::activeReqs()}) {
+        if (datagram.starts_with(tag)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool Processor::RedisCmdKey::operator==(const RedisCmdKey& other) const {
     // We specifically are interested in commands differing only when they refer to events on different seconds.
@@ -258,20 +275,20 @@ void Processor::sendToRedisQos() {
 
         const auto ss_key = fmt::v10::format("verb_{}_{}${}", getEpochSecs(key.m_timestamp), key.m_user, m_endpoint);
 
-        auto ss_cmd = fmt::v10::format("hincrby {} {} {}", ss_key, key.m_cat, val);
-        m_qos_redis_conn->addCommand(ss_cmd);
+        // The key and field come from syslog messages, so they are sent as separate
+        // arguments; see RedisServerConnection::addCommand.
+        m_qos_redis_conn->addCommand({"hincrby", ss_key, key.m_cat, std::to_string(val)});
 
         if (keys_found.insert(ss_key).second) {
-            ss_cmd = fmt::v10::format("expire {} {}", ss_key, m_redis_qos_ttl);
-            m_qos_redis_conn->addCommand(ss_cmd);
+            m_qos_redis_conn->addCommand({"expire", ss_key, std::to_string(m_redis_qos_ttl)});
         }
     }
     m_qos_redis_commands.clear();
 
     for (const auto& [key, active_request_count] : m_qos_redis_active_reqs) {
         // example key: conn_v2_user_up_instance1234_AKIAIOSFODNN7EXAMPLE$dev.dc
-        const auto ss_cmd = fmt::v10::format("set {} {} ex {}", key, active_request_count, m_redis_qos_conn_ttl);
-        m_qos_redis_conn->addCommand(ss_cmd);
+        m_qos_redis_conn->addCommand(
+            {"set", key, std::to_string(active_request_count), "ex", std::to_string(m_redis_qos_conn_ttl)});
     }
     m_qos_redis_active_reqs.clear();
 }
@@ -290,11 +307,8 @@ void Processor::processReq(std::string_view raw_input) {
         return;
     }
 
-    int active_requests;
-    const auto areqs_convert_result =
-        std::from_chars(tokens[static_cast<size_t>(RequestToken::ActiveRequests)].begin(),
-                        tokens[static_cast<size_t>(RequestToken::ActiveRequests)].end(), active_requests);
-    if (areqs_convert_result.ec != std::errc{}) {
+    int active_requests = 0;
+    if (!parseNonNegative(tokens[static_cast<size_t>(RequestToken::ActiveRequests)], active_requests)) {
         m_logger->error("Unexpected active request format: {}", raw_input);
         return;
     }
@@ -331,8 +345,7 @@ void Processor::processDataXfer(std::string_view raw_input) {
     const std::string_view direction = split.next();
     const std::string_view len_str = split.next();
     int len = 0;
-    const auto len_convert_result = std::from_chars(len_str.begin(), len_str.end(), len);
-    if (!split.finishedSuccessfully() || (len_convert_result.ec != std::errc{})) {
+    if (!split.finishedSuccessfully() || !parseNonNegative(len_str, len)) {
         m_logger->error("Unexpected data_xfer format: {}", raw_input);
         return;
     }
@@ -361,8 +374,7 @@ void Processor::processActiveRequests(std::string_view raw_input) {
     const std::string_view direction = split.next();
     const std::string_view active_reqs_str = split.next();
     int active_requests = 0;
-    const auto areqs_convert_result = std::from_chars(active_reqs_str.begin(), active_reqs_str.end(), active_requests);
-    if (!split.finishedSuccessfully() || (areqs_convert_result.ec != std::errc{})) {
+    if (!split.finishedSuccessfully() || !parseNonNegative(active_reqs_str, active_requests)) {
         m_logger->error("Unexpected active-requests format: {}", raw_input);
         return;
     }
@@ -384,8 +396,7 @@ void Processor::processReqEnd(std::string_view raw_input) {
     const std::string_view instance_id = split.next();
     const std::string_view active_reqs_str = split.next();
     int active_requests = 0;
-    const auto areqs_convert_result = std::from_chars(active_reqs_str.begin(), active_reqs_str.end(), active_requests);
-    if (!split.finishedSuccessfully() || (areqs_convert_result.ec != std::errc{})) {
+    if (!split.finishedSuccessfully() || !parseNonNegative(active_reqs_str, active_requests)) {
         m_logger->error("Unexpected request-end format: {}", raw_input);
         return;
     }
