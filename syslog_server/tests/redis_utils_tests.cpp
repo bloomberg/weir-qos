@@ -663,8 +663,7 @@ TEST_F(MockLog, addCommandPassesArgumentsVerbatim) {
 
     // Values come from unauthenticated syslog messages. Format specifiers, whitespace and
     // embedded NULs must reach hiredis byte-for-byte as discrete arguments.
-    const std::vector<std::string> args = {"hincrby", "verb_1_user_%s%s%n%p %b$dev.dc", std::string("a\0b c", 5),
-                                           "1"};
+    const std::vector<std::string> args = {"hincrby", "verb_1_user_%s%s%n%p %b$dev.dc", std::string("a\0b c", 5), "1"};
     std::vector<std::string> received;
     EXPECT_CALL(*p, redisAsyncCommandArgv)
         .WillOnce([&received](redisAsyncContext*, redisCallbackFn*, void*, int argc, const char** argv,
