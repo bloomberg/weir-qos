@@ -72,7 +72,7 @@ end
 function is_violater(cur_time, user, method)
     if is_reqs_violator(cur_time, user) then
        return 1, "requests"
-    end     
+    end
     -- Example: user="F1T" method="GET"
     local vio_key = "user_" .. method
     if vio_map[vio_key] and vio_map[vio_key][cur_time] and vio_map[vio_key][cur_time][user] then
@@ -127,6 +127,19 @@ local function check_violation(epoch, user, method_or_op, txn, tag)
     return violater
 end
 
+function get_sts_token_from_headers(headers)
+    if headers and headers["x-amz-security-token"] and headers["x-amz-security-token"][0] then
+        return headers["x-amz-security-token"][0]
+    end
+    return ""
+end
+
+core.register_fetches("sts_qos_get_token", function(txn)
+    local headers = txn.http:req_get_headers()
+    local token = get_sts_token_from_headers(headers)
+    return token
+end)
+
 function weir_should_block_request(txn, request_key, op_class)
     --[[
     Check if Weir thinks an incoming request should be blocked.
@@ -146,7 +159,12 @@ function weir_should_block_request(txn, request_key, op_class)
                 If empty string ("") is passed, operation-specific checks are skipped.
                 Pass an empty string ("") if you do not need operation-specific limits.
     ]]
-    txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), request_key)
+    local sts_token = get_sts_token_from_headers(txn.http:req_get_headers())
+    local is_sts_token = (sts_token ~= nil and sts_token ~= "") and 1 or 0
+
+    if is_sts_token == 0 then
+        txn.http:req_set_ip_port_key(txn.f:src(), txn.f:src_port(), request_key)
+    end
 
     local epoch = os.time()
     local violater = check_violation(epoch, request_key, txn.f:method(), txn)
@@ -174,7 +192,7 @@ function update_violates(line, curr_time)
         core.Warning("Received invalid violation: " .. line)
         return
     end
-    
+
     if string.match(items[1], "_reqs_") then
         update_violates_reqs(items, curr_time)
         return
@@ -284,7 +302,7 @@ function update_violates_map(items, curr_time)
       if k > 2 then
         map_update[curr_time][v] = 1
       end
-    end    
+    end
 end
 
 function ingest_policies(applet)
@@ -298,7 +316,7 @@ function ingest_policies(applet)
         if inputs == nil or string.len(inputs) == 0 then
             core.Info("closing a policy generator connection")
             return
-        end        
+        end
         -- Example: policies\n1554317654000000,user_GET,AKIAIOSFODNN7EXAMPLE,AKIAIOSFODNN8EXAMPLE\n1554317654555000,ip_PUT,1.2.3.4
         -- Example: policies\n1682013607888000,user_bnd_up,AKIAIOSFODNN7EXAMPLE:2.7,AKIAIOSFODNN8EXAMPLE:2.4
         -- Note that only "bnd" metrics has violation diff ratio
@@ -307,7 +325,7 @@ function ingest_policies(applet)
             curr_time = os.time()
             while true do
                 inputs = applet:getline()
-                inputs = inputs:gsub("^%s*(.-)%s*$", "%1")                
+                inputs = inputs:gsub("^%s*(.-)%s*$", "%1")
                 local first_pos = string.find(inputs, "END_OF_POLICIES", 1, true)
                 if inputs == nil or string.len(inputs) == 0 or first_pos == 1 then
                     break

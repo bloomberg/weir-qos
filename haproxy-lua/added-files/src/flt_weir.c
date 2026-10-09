@@ -288,7 +288,8 @@ static void weir_detach(struct stream* s, struct filter* filter) {
         // issue the request command and we shouldn't issue the request-end command either.
 
         WEIR_BUG_ON(st->limit == NULL); // We should definitely have a limit if we've been enabled on this stream
-        WEIR_BUG_ON(st->limit_key == NULL);
+        WEIR_BUG_ON(st->limit_key ==
+                    NULL); // We should definitely have a limit key if we've been enabled on this stream
         WEIR_BUG_ON(st->bandwidth_limit_direction == NULL);
 
         HA_RWLOCK_WRLOCK(OTHER_LOCK, &conf->state_lock);
@@ -303,10 +304,18 @@ static void weir_detach(struct stream* s, struct filter* filter) {
         HA_RWLOCK_WRUNLOCK(OTHER_LOCK, &conf->state_lock);
 
         WARN_ON(active_requests < 0);
-        send_log(NULL, LOG_INFO, "req_end~|~%s:%d~|~%s~|~%s~|~%s~|~%s~|~%d", inet_ntoa(st->remote_addr->sin_addr),
-                 ntohs(st->remote_addr->sin_port), st->limit_key, method_name(s->txn->meth),
-                 st->bandwidth_limit_direction, conf->instance_id, active_requests);
-
+        if (!st->is_sts_token) {
+            send_log(NULL, LOG_INFO, "req_end~|~%s:%d~|~%s~|~%s~|~%s~|~%s~|~%d", inet_ntoa(st->remote_addr->sin_addr),
+                     ntohs(st->remote_addr->sin_port), st->limit_key, method_name(s->txn->meth),
+                     st->bandwidth_limit_direction, conf->instance_id, active_requests);
+        }
+        // needed for VERB rate limiting in sts tokens, will be used later
+        // if (st->is_sts_token) {
+        //    send_log(NULL, LOG_INFO, "req_ststoken~|~%s:%d~|~%s~|~%s~|~%s~|~%d~|~%s",
+        //             inet_ntoa(st->remote_addr->sin_addr), ntohs(st->remote_addr->sin_port),
+        //             method_name(s->txn->meth), st->bandwidth_limit_direction, conf->instance_id, active_requests,
+        //             request_class);
+        // }
         rl_request_end(st->remote_addr);
     }
 
@@ -463,7 +472,7 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
 
         if (len > 0) {
             // Do not proceed with transferring data if we are throttling this connection
-            if ((st->remote_addr != NULL) && rl_speed_throttle(st->remote_addr, direction) == RL_THROTTLE) {
+            if (rl_speed_throttle(st->limit_key, direction, st->is_sts_token) == RL_THROTTLE) {
                 unsigned int* next_tick_ptr = (direction == RL_DOWNLOAD) ? &st->limit->download.next_throttle_log_tick
                                                                          : &st->limit->upload.next_throttle_log_tick;
                 unsigned int next_throttle_log_tick = HA_ATOMIC_LOAD(next_tick_ptr);
@@ -494,7 +503,7 @@ static int weir_http_payload(struct stream* s, struct filter* filter, struct htt
                 }
             } else {
                 bytes_to_forward = len;
-                rl_data_transferred(st->remote_addr, direction, len);
+                rl_data_transferred(st->remote_addr, direction, len, st->is_sts_token);
             }
         }
     }
@@ -614,6 +623,14 @@ static enum act_return weir_enable_filter(struct act_rule* rule, struct proxy* p
         }
     }
 
+    // --- Parse and store: sts-token ---
+    if (rule->arg.act.p[3]) {
+        smp = sample_fetch_as_type(px, sess, s, sample_options, rule->arg.act.p[3], SMP_T_STR);
+        if (smp && smp->data.u.str.area && smp->data.u.str.data > 0) {
+            st->is_sts_token = 1;
+        }
+    }
+
     // Apply the filter to data transferred both for the request and response
     register_data_filter(s, &s->req, filter);
     register_data_filter(s, &s->res, filter);
@@ -689,6 +706,10 @@ static void release_weir_action(struct act_rule* rule) {
         release_sample_expr(rule->arg.act.p[2]);
         rule->arg.act.p[2] = NULL;
     }
+    if (rule->arg.act.p[3]) {
+        release_sample_expr(rule->arg.act.p[3]);
+        rule->arg.act.p[3] = NULL;
+    }
 }
 
 /* Parse "activate-weir" action with named arguments.
@@ -728,11 +749,12 @@ static enum act_parse_ret activate_weir_limit(const char** args, int* orig_arg, 
     rule->arg.act.p[0] = NULL; // user-key
     rule->arg.act.p[1] = NULL; // operation-class
     rule->arg.act.p[2] = NULL; // operation-direction
+    rule->arg.act.p[3] = NULL; // sts-token
 
     while (*args[cur_arg]) {
         const char* arg_name = args[cur_arg];
         if ((strcmp(arg_name, "user-key") != 0) && (strcmp(arg_name, "operation-class") != 0) &&
-            (strcmp(arg_name, "operation-direction") != 0)) {
+            (strcmp(arg_name, "operation-direction") != 0) && (strcmp(arg_name, "sts-token") != 0)) {
             // We've parsed passed all the expected tokens, stop here so that we don't interfere with the rest of the
             // expression (namely for adding a condition to this config line).
             break;

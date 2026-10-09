@@ -248,21 +248,20 @@ static void compute_allowed_run_time(speed_hash_value_t* policy, uint32_t curr_s
     }
 }
 
-static speed_hash_value_t get_epoch_sec(uint64_t ip_port, DataDirection data_direction, uint32_t curr_sec,
-                                        kh_cstr_t* access_key) {
+static speed_hash_value_t get_epoch_sec(const char* access_key, DataDirection data_direction, uint32_t curr_sec,
+                                        int is_sts_token) {
     khint_t k;
     pthread_rwlock_t* lck;
     khash_t(speed_hash) * hash;
     speed_hash_value_t found = {.throttle = 0};
 
-    if (access_key == NULL) {
-        send_log(NULL, LOG_DEBUG, "Access key is null");
+    if (is_sts_token) {
+        send_log(NULL, LOG_DEBUG, "No throttling implemented yet in the sts token path");
         return found;
     }
 
-    *access_key = get_key_from_ip_port(ip_port);
-    if (*access_key == NULL || strlen(*access_key) == 0) {
-        send_log(NULL, LOG_DEBUG, "Can not get access key from ip_port_key_hashmap");
+    if (access_key == NULL || strlen(access_key) == 0) {
+        send_log(NULL, LOG_DEBUG, "Access key is null or empty");
         return found;
     }
 
@@ -274,13 +273,14 @@ static speed_hash_value_t get_epoch_sec(uint64_t ip_port, DataDirection data_dir
     }
 
     pthread_rwlock_rdlock(lck);
-    k = kh_get(speed_hash, hash, *access_key);
+    k = kh_get(speed_hash, hash, access_key);
     if (k != kh_end(hash)) {
         found = kh_value(hash, k);
         found.throttle = 0;
         if (is_valid_violation_policy(&found, curr_sec)) {
             found.throttle = 1;
-            found.num_active_connections = get_ip_port_count_from_key(*access_key);
+            found.num_active_connections = get_ip_port_count_from_key(access_key);
+
             compute_allowed_run_time(&found, curr_sec);
         }
     }
@@ -329,24 +329,20 @@ static inline uint32_t get_jitter_usec(speed_hash_value_t* policy) {
     return jitter ? (ha_random32() % BASE_JITTER_RANGE_MS) * UINT_USECS_IN_MILLISEC : 0;
 }
 
-int rl_speed_throttle(struct sockaddr_in* addr_in, DataDirection data_direction) {
-    uint64_t ip_port;
-    kh_cstr_t access_key;
+int rl_speed_throttle(const char* access_key, DataDirection data_direction, int is_sts_token) {
     speed_hash_value_t found;
     epoch_t current_epoch = get_current_epoch();
 
-    if (addr_in == NULL)
+    if (!is_sts_token && (access_key == NULL || strlen(access_key) == 0))
         return RL_NO_THROTTLE;
 
-    ip_port = ip_port_from_sockaddr(addr_in);
-
-    found = get_epoch_sec(ip_port, data_direction, current_epoch.in_seconds, &access_key);
+    found = get_epoch_sec(access_key, data_direction, current_epoch.in_seconds, is_sts_token);
     send_log(NULL, LOG_DEBUG,
-             "in speed_throttle: throttle=%u key=%s curr_epoch=%d ip=%s port=%d "
+             "in rl_speed_throttle: throttle=%u key=%s curr_epoch=%d "
              "direction=%s violation_recv_sec=%d elapsed_in_epoch=%lu diff_ratio=%f allowed=%lu\n",
-             found.throttle, access_key, current_epoch.in_seconds, inet_ntoa(addr_in->sin_addr),
-             ntohs(addr_in->sin_port), (data_direction == RL_DOWNLOAD ? "download" : "upload"),
-             found.received_epoch_sec, found.elapsed_usec_in_the_epoch, found.diff_ratio, found.allowed_run_time_usec);
+             found.throttle, access_key ? access_key : "(null)", current_epoch.in_seconds,
+             (data_direction == RL_DOWNLOAD ? "download" : "upload"), found.received_epoch_sec,
+             found.elapsed_usec_in_the_epoch, found.diff_ratio, found.allowed_run_time_usec);
 
     if (0 == found.throttle)
         return RL_NO_THROTTLE;
@@ -363,10 +359,10 @@ int rl_speed_throttle(struct sockaddr_in* addr_in, DataDirection data_direction)
     }
 
     send_log(NULL, LOG_DEBUG,
-             "Slowing down: key=%s curr_epoch=%d ip=%s port=%d direction=%s "
+             "Slowing down: key=%s curr_epoch=%d direction=%s "
              "policy_epoch=%u elapsed_in_epoch_us=%lu allowed_run_time_us=%lu diff_ratio=%f "
              "num_conns=%d\n",
-             access_key, current_epoch.in_seconds, inet_ntoa(addr_in->sin_addr), ntohs(addr_in->sin_port),
+             access_key ? access_key : "(null)", current_epoch.in_seconds,
              (data_direction == RL_DOWNLOAD ? "download" : "upload"), found.received_epoch_sec,
              found.elapsed_usec_in_the_epoch, found.allowed_run_time_usec, found.diff_ratio,
              found.num_active_connections);
@@ -375,13 +371,17 @@ int rl_speed_throttle(struct sockaddr_in* addr_in, DataDirection data_direction)
     return RL_THROTTLE;
 }
 
-void rl_data_transferred(struct sockaddr_in* addr_in, DataDirection data_direction, unsigned int done) {
+void rl_data_transferred(struct sockaddr_in* addr_in, DataDirection data_direction, unsigned int done,
+                         int is_sts_token) {
     uint64_t ip_port;
     kh_cstr_t access_key;
 
-    if (addr_in == NULL)
+    if (is_sts_token) {
         return;
-
+    }
+    if (addr_in == NULL) {
+        return;
+    }
     ip_port = ip_port_from_sockaddr(addr_in);
 
     access_key = get_key_from_ip_port(ip_port);
